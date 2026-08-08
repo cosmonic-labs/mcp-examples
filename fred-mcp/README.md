@@ -29,11 +29,15 @@ Get a free key at
 `FRED_API_KEY` and adds it as a query parameter. If it is not set, every tool
 returns a clear, actionable error (not a crash) telling you to set it.
 
-- **Cosmonic Desktop:** register a secret and reference it with
-  `secretFrom` in the workload (as `deploy/workload.yaml` does), so the key
-  is never in the manifest:
+- **Cosmonic Desktop:** register a secret *reference* and point the workload
+  at it with `secretFrom` (as `deploy/workload.yaml` does), so the key lives
+  in your OS keychain and never appears in a manifest. With the
+  `cosmonic_set_secret` MCP tool:
   ```
-  cosmonic_set_secret fred-api-key <your-key>
+  name:  fred-api-key                      # the reference name used in secretFrom
+  uri:   keychain://cosmonic/fred-api-key  # keychain-backed storage
+  env:   FRED_API_KEY                      # env var injected into the component
+  value: <your-key>                        # write-only; never returned or logged
   ```
   ```yaml
   localResources:

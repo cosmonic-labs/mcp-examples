@@ -2,9 +2,14 @@
 # Local iteration uses ../workload.yaml (Desktop's built-in registry); this
 # manifest deploys the released image. Docs: https://cosmonic.com/docs/desktop
 #
-# Requires a FRED API key registered as a Cosmonic secret before applying
-# (get a free key at https://fred.stlouisfed.org/docs/api/api_key.html):
-#   cosmonic_set_secret fred-api-key <your-key>   # provides FRED_API_KEY
+# Requires a FRED API key registered as a Cosmonic secret before applying.
+# Get a free key at https://fred.stlouisfed.org/docs/api/api_key.html, then
+# register a keychain-backed secret reference with the `cosmonic_set_secret`
+# MCP tool (the value goes into your OS keychain, never into this manifest):
+#   name:  fred-api-key                      # matches secretFrom below
+#   uri:   keychain://cosmonic/fred-api-key
+#   env:   FRED_API_KEY                      # variable injected into the component
+#   value: <your-key>
 apiVersion: runtime.wasmcloud.dev/v1alpha1
 kind: Workload
 metadata:
