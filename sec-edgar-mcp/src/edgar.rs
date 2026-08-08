@@ -246,8 +246,11 @@ fn select_annual(value: &Value, group: &str, year: i32) -> Option<Value> {
     let mut unit_keys: Vec<&String> = units.keys().collect();
     unit_keys.sort_by_key(|k| (k.as_str() != "USD", k.as_str().to_owned()));
 
-    let mut best: Option<(i32, String, String, Value)> = None;
+    // Rank tuple: (rank, is_usd) so a USD fact wins ties over a same-rank,
+    // same-date fact reported in another unit (e.g. a foreign currency).
+    let mut best: Option<(i32, bool, String, String, Value)> = None;
     for unit in unit_keys {
+        let is_usd = unit.as_str() == "USD";
         let Some(facts) = units.get(unit).and_then(Value::as_array) else {
             continue;
         };
@@ -282,20 +285,18 @@ fn select_annual(value: &Value, group: &str, year: i32) -> Option<Value> {
                 "end": end,
                 "filed": filed,
             });
+            // Compare on (rank, is_usd, end, filed), higher wins.
+            let key = (rank, is_usd, end, filed);
             let better = match &best {
                 None => true,
-                Some((r, e, f, _)) => {
-                    rank > *r
-                        || (rank == *r && end > e.as_str())
-                        || (rank == *r && end == e.as_str() && filed > f.as_str())
-                }
+                Some((r, u, e, f, _)) => key > (*r, *u, e.as_str(), f.as_str()),
             };
             if better {
-                best = Some((rank, end.to_owned(), filed.to_owned(), candidate));
+                best = Some((rank, is_usd, end.to_owned(), filed.to_owned(), candidate));
             }
         }
     }
-    best.map(|(_, _, _, metric)| metric)
+    best.map(|(_, _, _, _, metric)| metric)
 }
 
 /// `get_submission_history` implementation.
