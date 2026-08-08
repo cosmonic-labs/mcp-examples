@@ -1,9 +1,9 @@
 [package]
-name = "after-effects-mcp"
+name = "sec-edgar-mcp"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.90"
-description = "After Effects helper MCP server (WebAssembly component, wasi:http@0.3.0)"
+description = "SEC EDGAR MCP server (WebAssembly component, wasi:http@0.3.0)"
 license = "Apache-2.0"
 repository = "https://github.com/cosmonic-labs/mcp-examples"
 

@@ -701,30 +701,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "premiere-mcp"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "http",
- "http-body",
- "http-body-util",
- "opentelemetry",
- "opentelemetry-wasi",
- "opentelemetry_sdk",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "wasip3",
- "wit-bindgen 0.57.1",
-]
-
-[[package]]
 name = "prettyplease"
 version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -941,6 +917,30 @@ dependencies = [
  "quote",
  "serde_derive_internals",
  "syn 3.0.3",
+]
+
+[[package]]
+name = "sec-edgar-mcp"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "http",
+ "http-body",
+ "http-body-util",
+ "opentelemetry",
+ "opentelemetry-wasi",
+ "opentelemetry_sdk",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "wasip3",
+ "wit-bindgen 0.57.1",
 ]
 
 [[package]]

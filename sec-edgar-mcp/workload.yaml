@@ -1,0 +1,60 @@
+# Cosmonic Desktop / wasmCloud v2 Workload manifest for this MCP server.
+#
+# Replace `image` with the digest-pinned reference returned by promote
+# (`cosmonic_promote` or the Cosmonic Desktop UI), then apply with
+# `cosmonic_apply_workload` or POST /v1/workloads.
+#
+# The wasi:http hostInterface routes ingress traffic to this workload by HTTP
+# Host header. Note `interfaces: ["handler"]` — the WASI p3 (wasi:http@0.3.0)
+# handler export, not the p2 `incoming-handler`.
+apiVersion: runtime.wasmcloud.dev/v1alpha1
+kind: Workload
+metadata:
+  name: sec-edgar-mcp
+  namespace: default
+  # MCP metadata convention used by Cosmonic Desktop to catalog MCP servers.
+  # Update name/version/domain when you fork this template.
+  labels:
+    app.kubernetes.io/name: "sec-edgar-mcp"
+    app.kubernetes.io/version: "0.1.0"
+    mcp.ai/auth-type: none
+    mcp.ai/domain: "sec-edgar"
+    mcp.ai/function-type: tools
+    mcp.ai/spec-version: "2026-07-28"
+    mcp.ai/statefulness: stateless
+    mcp.ai/transport: "streamable-http"
+    mcp.ai/sandbox-isolation: wasmtime
+    mcp.ai/agent-access: internal-only
+  annotations:
+    desktop.cosmonic.com/source: mcp
+spec:
+  hostInterfaces:
+    - namespace: wasi
+      package: http
+      interfaces: ["handler"]
+      config:
+        host: sec-edgar-mcp.localhost
+  components:
+    - name: mcp
+      image: oci-registry.localhost:8200/sec-edgar-mcp:0.1.0
+      poolSize: 1
+      localResources:
+        environment:
+          config:
+            RUST_LOG: info
+            # DNS-rebinding guard: hosts the transport accepts in the Host
+            # header (`host` matches any port; `host:port` is exact; `*`
+            # disables the guard). Unset, only localhost/127.0.0.1/::1 are
+            # accepted — Cosmonic routes to this workload by Host header, so
+            # this must match the hostInterface `host` above.
+            MCP_ALLOWED_HOSTS: "sec-edgar-mcp.localhost"
+            # SEC requires a User-Agent naming a real contact ("Name email").
+            # Requests without one are refused with HTTP 403.
+            SEC_USER_AGENT: "Cosmonic Labs sec-edgar-mcp admin@cosmonic.com"
+            # Some EDGAR documents (submissions for very active filers) exceed
+            # the default 4 MiB outbound response cap.
+            MCP_OUTBOUND_MAX_BYTES: "33554432"
+        # Outbound allow-list — the only two hosts EDGAR uses. Empty = deny-all.
+        allowedHosts:
+          - www.sec.gov
+          - data.sec.gov
