@@ -36,12 +36,16 @@ tools reject impossible drop-frame labels (e.g. `00:01:00;00`, whose frames
 $ cargo build --release
 ```
 
-## Run locally (wasmtime)
+## Deploy on Cosmonic Desktop
+
+Deployment is via [Cosmonic Desktop](https://cosmonic.com/docs/desktop):
+apply [`deploy/workload.yaml`](deploy/workload.yaml) for the published image,
+or promote a local build and apply `workload.yaml` — see the
+[repo README](../README.md#running-an-example-on-cosmonic-desktop) for the
+full walkthrough. Then call it through the ingress:
 
 ```console
-$ wasmtime serve -Sp3,cli,http --addr 127.0.0.1:8080 \
-    target/wasm32-wasip2/release/premiere_mcp.wasm
-$ curl -X POST http://127.0.0.1:8080/ \
+$ curl -X POST http://premiere-mcp.localhost:8200/ \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
     -H 'MCP-Protocol-Version: 2026-07-28' \
@@ -49,11 +53,6 @@ $ curl -X POST http://127.0.0.1:8080/ \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"frames_to_timecode","arguments":{"frames":1800,"fps":29.97,"drop_frame":true},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
 # -> "timecode":"00:01:00;02"
 ```
-
-## Run on Cosmonic Desktop
-
-See the [repo README](../README.md#running-an-example-on-cosmonic-desktop).
-Reach it at `http://premiere-mcp.localhost:8200/`.
 
 ## Test
 

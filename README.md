@@ -12,7 +12,8 @@ Every example:
 - speaks **MCP 2026-07-28** (stateless streamable HTTP, header routing, structured output),
 - exports **`wasi:http/handler@0.3.0`** (WASI p3),
 - ships a hermetic **`scripts/e2e.sh`** test suite (run in CI),
-- deploys to Cosmonic Desktop with a `workload.yaml`.
+- deploys to Cosmonic Desktop with a `workload.yaml` (local builds) and a
+  `deploy/workload.yaml` (the published image).
 
 ## The four examples
 
@@ -35,32 +36,25 @@ spec enforcement, robustness, Host guard) and adds its own tool cases.
 ## Build & test any example
 
 Prerequisites: Rust 1.90+ with the wasip2 target (`rustup target add
-wasm32-wasip2`), `wasm-tools`, `wasmtime` ≥ 46, `python3`, `curl`.
+wasm32-wasip2`); the e2e suite additionally needs `wasm-tools`,
+`wasmtime` ≥ 46 (test harness only), `python3`, and `curl`.
 
 ```console
 $ cd after-effects-mcp        # or any example
 $ cargo build --release       # -> target/wasm32-wasip2/release/<name>.wasm
-$ ./scripts/e2e.sh            # builds, serves under wasmtime, runs the suite
+$ ./scripts/e2e.sh            # runs the hermetic test suite
 ```
 
 `cargo test` is **not** used — the build target is wasm, so `scripts/e2e.sh`
 is the test entry point.
 
-## Run an example under wasmtime
-
-```console
-$ wasmtime serve -Sp3,cli,http --addr 127.0.0.1:8080 \
-    target/wasm32-wasip2/release/<name>.wasm
-```
-
-Always pass `--addr 127.0.0.1` (wasmtime defaults to `0.0.0.0`). Outbound
-examples need `-Shttp` and their env (`SEC_USER_AGENT`, `FRED_API_KEY`); see
-each example's README.
-
 ## Running an example on Cosmonic Desktop
 
-Cosmonic Desktop runs WASI p3 components natively and routes ingress by HTTP
-`Host` header. The daemon's control socket is
+Deployment is via [Cosmonic Desktop](https://cosmonic.com/docs/desktop),
+which runs WASI p3 components natively and routes ingress by HTTP `Host`
+header. Each example ships two manifests: `workload.yaml` for a locally
+built/promoted image, and `deploy/workload.yaml` for the published image.
+The daemon's control socket is
 `~/Library/Application Support/Cosmonic/cosmonicd.sock`.
 
 1. **Register** the project directory (it has a `.wash/config.yaml`):
@@ -86,9 +80,10 @@ Cosmonic Desktop runs WASI p3 components natively and routes ingress by HTTP
    > wrong field name (`reference` instead of `ref`); the socket call above is
    > the reliable path.
 
-3. **Apply** the workload (`workload.yaml` in each example) with the
-   digest-pinned image, e.g. via the Cosmonic Desktop UI, the
-   `cosmonic_apply_workload` MCP tool, or `POST /v1/workloads`. Key fields:
+3. **Apply** the workload — `workload.yaml` with the digest-pinned image
+   from promote, or `deploy/workload.yaml` for the published image — via the
+   Cosmonic Desktop UI, the `cosmonic_apply_workload` MCP tool, or
+   `POST /v1/workloads`. Key fields:
 
    ```yaml
    spec:

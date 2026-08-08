@@ -36,25 +36,22 @@ $ cargo build --release
 Produces `target/wasm32-wasip2/release/after_effects_mcp.wasm`, which exports
 `wasi:http/handler@0.3.0`.
 
-## Run locally (wasmtime)
+## Deploy on Cosmonic Desktop
+
+Deployment is via [Cosmonic Desktop](https://cosmonic.com/docs/desktop):
+apply [`deploy/workload.yaml`](deploy/workload.yaml) for the published image,
+or promote a local build and apply `workload.yaml` — see the
+[repo README](../README.md#running-an-example-on-cosmonic-desktop) for the
+full walkthrough. Then call it through the ingress:
 
 ```console
-$ wasmtime serve -Sp3,cli,http --addr 127.0.0.1:8080 \
-    target/wasm32-wasip2/release/after_effects_mcp.wasm
-$ curl -X POST http://127.0.0.1:8080/ \
+$ curl -X POST http://after-effects-mcp.localhost:8200/ \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
     -H 'MCP-Protocol-Version: 2026-07-28' \
     -H 'Mcp-Method: tools/call' -H 'Mcp-Name: frames_to_timecode' \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"frames_to_timecode","arguments":{"frames":48,"fps":24},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
 ```
-
-## Run on Cosmonic Desktop
-
-See the [repo README](../README.md#running-an-example-on-cosmonic-desktop) for
-the full deploy walkthrough. In brief: register the project, promote to the
-local registry, apply `workload.yaml`, and reach it at
-`http://after-effects-mcp.localhost:8200/`.
 
 ## Test
 

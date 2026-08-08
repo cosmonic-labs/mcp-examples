@@ -29,9 +29,9 @@ Get a free key at
 `FRED_API_KEY` and adds it as a query parameter. If it is not set, every tool
 returns a clear, actionable error (not a crash) telling you to set it.
 
-- **Local:** pass `--env FRED_API_KEY=<your-key>` to `wasmtime serve`.
-- **Cosmonic Desktop (recommended):** register a secret and reference it with
-  `secretFrom` in `workload.yaml`, so the key is never in the manifest:
+- **Cosmonic Desktop:** register a secret and reference it with
+  `secretFrom` in the workload (as `deploy/workload.yaml` does), so the key
+  is never in the manifest:
   ```
   cosmonic_set_secret fred-api-key <your-key>
   ```
@@ -57,24 +57,23 @@ allowedHosts: [api.stlouisfed.org]
 $ cargo build --release
 ```
 
-## Run locally (wasmtime)
+## Deploy on Cosmonic Desktop
+
+Deployment is via [Cosmonic Desktop](https://cosmonic.com/docs/desktop):
+register the `fred-api-key` secret (above), then apply
+[`deploy/workload.yaml`](deploy/workload.yaml) for the published image, or
+promote a local build and apply `workload.yaml` — see the
+[repo README](../README.md#running-an-example-on-cosmonic-desktop) for the
+full walkthrough. Then call it through the ingress:
 
 ```console
-$ wasmtime serve -Sp3,cli,http \
-    --env FRED_API_KEY=<your-key> \
-    --addr 127.0.0.1:8080 \
-    target/wasm32-wasip2/release/fred_mcp.wasm
-$ curl -X POST http://127.0.0.1:8080/ \
+$ curl -X POST http://fred-mcp.localhost:8200/ \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
     -H 'MCP-Protocol-Version: 2026-07-28' \
     -H 'Mcp-Method: tools/call' -H 'Mcp-Name: get_series_observations' \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_series_observations","arguments":{"series_id":"UNRATE","limit":5},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
 ```
-
-## Run on Cosmonic Desktop
-
-See the [repo README](../README.md#running-an-example-on-cosmonic-desktop).
 
 ## Test
 

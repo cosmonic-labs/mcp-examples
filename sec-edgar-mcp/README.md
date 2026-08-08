@@ -48,14 +48,16 @@ allowedHosts: [www.sec.gov, data.sec.gov]
 $ cargo build --release
 ```
 
-## Run locally (wasmtime)
+## Deploy on Cosmonic Desktop
+
+Deployment is via [Cosmonic Desktop](https://cosmonic.com/docs/desktop):
+apply [`deploy/workload.yaml`](deploy/workload.yaml) for the published image,
+or promote a local build and apply `workload.yaml` — see the
+[repo README](../README.md#running-an-example-on-cosmonic-desktop) for the
+full walkthrough. Then call it through the ingress:
 
 ```console
-$ wasmtime serve -Sp3,cli,http \
-    --env SEC_USER_AGENT="Your Name you@example.com" \
-    --addr 127.0.0.1:8080 \
-    target/wasm32-wasip2/release/sec_edgar_mcp.wasm
-$ curl -X POST http://127.0.0.1:8080/ \
+$ curl -X POST http://sec-edgar-mcp.localhost:8200/ \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
     -H 'MCP-Protocol-Version: 2026-07-28' \
@@ -63,12 +65,8 @@ $ curl -X POST http://127.0.0.1:8080/ \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_submission_history","arguments":{"ticker":"AAPL","form_type":"10-K"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
 ```
 
-Under `wasmtime serve -Shttp` there is no outbound allow-list, so this reaches
-SEC directly. On Cosmonic Desktop the `allowedHosts` policy applies.
-
-## Run on Cosmonic Desktop
-
-See the [repo README](../README.md#running-an-example-on-cosmonic-desktop).
+Outbound requests are governed by the workload's `allowedHosts` policy
+(`www.sec.gov`, `data.sec.gov`).
 
 ## Test
 
