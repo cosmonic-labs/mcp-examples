@@ -19,13 +19,14 @@ Every example:
 
 | Example | What it shows | Tools |
 |---|---|---|
-| [**after-effects-mcp**](after-effects-mcp/) | Pure-compute helper server | frame/timecode conversion, keyframe easing, AE expression generation, effect-template lookup, hex→RGBA |
+| [**after-effects-mcp**](after-effects-mcp/) | **Driving a live desktop app** via a polling bridge + `wasi:keyvalue` state | create/animate compositions, layers, keyframes, expressions, masks, cameras, effects; render frames; plus pure-compute timecode/easing/colour helpers |
 | [**premiere-mcp**](premiere-mcp/) | Pure-compute with tricky domain math | SMPTE **drop-frame** timecode, offset, sequence duration, frame-rate conform |
 | [**sec-edgar-mcp**](sec-edgar-mcp/) | **Outbound HTTP**, no key, caching | SEC EDGAR company facts & filing history (ticker→CIK, `SEC_USER_AGENT`) |
 | [**fred-mcp**](fred-mcp/) | **Outbound HTTP with an API key** | FRED economic-data search, series metadata & observations (`FRED_API_KEY`) |
 
 Together they cover the whole framework surface: pure compute, domain-math
-correctness, outbound APIs, caching, secrets, and the concurrency/robustness
+correctness, outbound APIs, caching, secrets, host state, controlling a local
+application a component cannot call directly, and the concurrency/robustness
 patterns the template enforces (bounded buffers, deadlines, panic-free numeric
 code, DNS-rebinding and SSRF guards).
 
@@ -56,6 +57,11 @@ header. Each example ships two manifests: `workload.yaml` for a locally
 built/promoted image, and `deploy/workload.yaml` for the published image.
 The daemon's control socket is
 `~/Library/Application Support/Cosmonic/cosmonicd.sock`.
+
+If you just want to run one, skip to step 3 and apply `deploy/workload.yaml`:
+it references a public image on GHCR
+(`ghcr.io/cosmonic-labs/<name>:<version>`), so nothing needs building. Steps 1
+and 2 are for iterating on your own copy.
 
 1. **Register** the project directory (it has a `.wash/config.yaml`):
 
@@ -129,6 +135,39 @@ The daemon's control socket is
 - **Don't overwrite existing workloads**: apply is idempotent by
   `namespace/name`, and the ingress `host` is global. Pick a fresh
   namespace/name/host if one is taken.
+
+## Releasing
+
+Each example is released independently, from a tag named
+`<example>/v<version>` whose version matches that example's `Cargo.toml`:
+
+```console
+$ git tag fred-mcp/v0.1.0
+$ git push origin fred-mcp/v0.1.0
+```
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) then checks
+the manifests, builds the component, runs its e2e suite, and only on success
+pushes it to `ghcr.io/cosmonic-labs/<example>` — as an OCI **wasm artifact**
+(`application/wasm` layer, pushed with `wkg`), not a container image — under
+both `<version>` and `latest`. It finishes by cutting a GitHub Release whose
+notes carry the digest-pinned reference. Use `workflow_dispatch` (with
+`dry_run`) to rehearse a release without publishing.
+
+The version in the tag, in `Cargo.toml`, and in the image reference in
+`deploy/workload.yaml` must agree, or the release fails before pushing
+anything — this is what stops a manifest from pointing at an image that was
+never published. [`scripts/check-manifests.sh`](scripts/check-manifests.sh)
+enforces that on every PR too, along with the rule that every ingress `host`
+appears in `MCP_ALLOWED_HOSTS` (miss that and the deployment answers nothing
+but `Forbidden`).
+
+To bump an example: edit its `Cargo.toml` version, update `app.kubernetes.io/version`
+and the `image` tag in both manifests, run `./scripts/check-manifests.sh`, merge,
+then tag.
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs every example's
+e2e suite, `cargo fmt --check`, and the manifest check on each push and PR.
 
 ## Building your own
 
