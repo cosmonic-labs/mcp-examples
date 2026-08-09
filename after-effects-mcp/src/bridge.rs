@@ -26,12 +26,17 @@ use std::pin::pin;
 use bytes::Bytes;
 use tokio::sync::{mpsc, oneshot};
 
-/// An outbound HTTP exchange queued by tool code for the component-model
-/// driver to perform.
-type Job = (
-    http::Request<Bytes>,
-    oneshot::Sender<Result<http::Response<Bytes>, outbound::Error>>,
-);
+/// Work queued by tool code for the component-model driver to perform,
+/// because it can only be done outside the tokio runtime.
+pub enum Job {
+    /// An outbound HTTP exchange — see [`outbound::fetch`].
+    Fetch(
+        http::Request<Bytes>,
+        oneshot::Sender<Result<http::Response<Bytes>, outbound::Error>>,
+    ),
+    /// A delay on the `wasi:clocks` monotonic clock — see [`sleep`].
+    Sleep(u64, oneshot::Sender<()>),
+}
 
 type JobReceiver = std::sync::Mutex<mpsc::UnboundedReceiver<Job>>;
 
@@ -118,10 +123,14 @@ pub async fn drive<T>(future: impl Future<Output = T>) -> T {
         });
         match step {
             Step::Done(value) => return value,
-            Step::Job((request, reply)) => {
-                // Component-model context again: perform the exchange with
-                // the real wasi:http client bindings.
+            // Component-model context again: do the work the tokio world
+            // cannot, then resume it with the answer.
+            Step::Job(Job::Fetch(request, reply)) => {
                 let _ = reply.send(outbound::perform(request).await);
+            }
+            Step::Job(Job::Sleep(millis, reply)) => {
+                wasip3::clocks::monotonic_clock::wait_for(millis.saturating_mul(1_000_000)).await;
+                let _ = reply.send(());
             }
         }
     }
@@ -131,6 +140,25 @@ async fn poll_next_job() -> Job {
     std::future::poll_fn(|cx| with_job_receiver(|rx| rx.poll_recv(cx)))
         .await
         .expect("job queue sender side is static and never closes")
+}
+
+/// Suspends **tokio-world** code for `millis` on the `wasi:clocks` monotonic
+/// clock.
+///
+/// `tokio::time::sleep` would park the runtime thread, and the host cannot
+/// make progress while the thread sits inside `block_on` — so the wait is
+/// handed to the component-model driver like an outbound request is. This is
+/// what lets a tool poll for the After Effects panel's reply without
+/// wedging the instance.
+///
+/// Returns early if the driver goes away (component teardown, or the
+/// exchange was abandoned), so callers must still respect their own deadline.
+pub async fn sleep(millis: u64) {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    if job_sender().send(Job::Sleep(millis, reply_tx)).is_err() {
+        return;
+    }
+    let _ = reply_rx.await;
 }
 
 /// The deadline elapsed before the raced future completed.
@@ -227,7 +255,7 @@ pub mod outbound {
     pub async fn fetch(request: http::Request<Bytes>) -> Result<http::Response<Bytes>, Error> {
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
         super::job_sender()
-            .send((request, reply_tx))
+            .send(super::Job::Fetch(request, reply_tx))
             .map_err(|_| Error::BridgeClosed)?;
         reply_rx.await.map_err(|_| Error::BridgeClosed)?
     }

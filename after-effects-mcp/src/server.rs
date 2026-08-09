@@ -3,14 +3,18 @@
 //! These tools do the fiddly arithmetic and code generation an AE artist
 //! reaches for constantly: frame/timecode conversion, keyframe easing values,
 //! expression snippets, and color conversion into AE's 0..1 float space. No
-//! host application is involved — the component is self-contained.
+//! host application is involved — they answer from a request alone, which is
+//! why they stay useful even when the bridge panel is closed.
+//!
+//! The tools that drive a *live* After Effects instance live in
+//! [`crate::live`]; both routers are merged in [`AfterEffectsServer::new`].
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ErrorData, ServerHandler};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// After Effects MCP server. Stateless — one instance per request.
 #[derive(Clone)]
@@ -61,7 +65,10 @@ pub enum Easing {
 /// A predefined After Effects effect template. Names and defaults mirror the
 /// reference toolkit; `match_name` is the internal ADBE identifier (more
 /// reliable to apply than the display name).
-#[derive(Debug, Deserialize, JsonSchema)]
+///
+/// `Serialize` matters: [`crate::live`] sends these names straight to the
+/// panel's `applyEffectTemplate`, which expects the same kebab-case spelling.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum EffectTemplate {
     GaussianBlur,
@@ -130,7 +137,9 @@ pub struct HexToRgbParams {
 impl AfterEffectsServer {
     pub fn new() -> Self {
         Self {
-            tool_router: Self::tool_router(),
+            // Pure-compute helpers plus the live-control tools from
+            // `crate::live`, which share this struct's router.
+            tool_router: Self::tool_router() + Self::live_router(),
         }
     }
 
@@ -445,9 +454,19 @@ impl ServerHandler for AfterEffectsServer {
                 env!("CARGO_PKG_VERSION"),
             ))
             .with_instructions(
-                "After Effects helper tools: frame/timecode conversion, keyframe \
-                 easing, expression generation, and color conversion. All \
-                 pure-compute — no host application required.",
+                "Controls a live Adobe After Effects instance through the MCP Bridge \
+                 Auto panel (Window > mcp-bridge-auto.jsx), which polls this server \
+                 every ~2 seconds. Check `bridge_status` first if commands seem to \
+                 hang, and `get_results` to fetch the outcome of one that timed out. \
+                 Every call costs a poll cycle, so build scenes with `run_batch` \
+                 rather than one tool call per layer, and verify with \
+                 `save_frame_png`. `get_help` has the setup steps and effect \
+                 match names.\n\n\
+                 The helper tools — frames_to_timecode, timecode_to_frames, \
+                 interpolate, expression, effect_template, hex_to_rgb — are pure \
+                 arithmetic and code generation. They need no panel, and are the \
+                 right way to work out keyframe values, easing, and colours before \
+                 sending them to After Effects.",
             )
     }
 }

@@ -28,13 +28,21 @@ spec:
         - "handler"
       config:
         host: "after-effects-mcp.localhost.cosmonic.sh"
+    # Bridge command queue — see ../workload.yaml for why it cannot live in
+    # component memory. The component will not instantiate without it.
+    - namespace: wasi
+      package: keyvalue
+      interfaces:
+        - "store"
   components:
     - name: "after-effects-mcp"
       # Desktop pins this tag to a digest at apply time. To deploy a locally
       # promoted build instead, use the digest-pinned
       # oci-registry.localhost:8200 reference that promote returns.
       image: "ghcr.io/cosmonic-labs/after-effects-mcp:0.1.0"
-      poolSize: 1
+      # Several warm instances so a tool call waiting on a result never
+      # starves the After Effects panel's poll requests.
+      poolSize: 4
       maxInvocations: 0
       localResources:
         environment:
@@ -42,5 +50,9 @@ spec:
             RUST_LOG: info
             # DNS-rebinding guard: must list the ingress host(s) above.
             MCP_ALLOWED_HOSTS: "after-effects-mcp.localhost.cosmonic.sh,after-effects-mcp.localhost"
-        # Pure compute — no outbound hosts (deny-all).
+            # Keyvalue key namespace — the host's default bucket is shared, so
+            # a second After Effects bridge needs a different prefix.
+            MCP_BRIDGE_KEY_PREFIX: "after-effects-mcp"
+        # No outbound hosts (deny-all). After Effects dials in; this workload
+        # never dials out.
         allowedHosts: []

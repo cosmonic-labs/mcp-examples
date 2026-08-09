@@ -21,6 +21,8 @@ metadata:
     mcp.ai/domain: "adobe-after-effects"
     "mcp.ai/function-type": tools
     "mcp.ai/spec-version": "2026-07-28"
+    # The MCP transport is stateless (no sessions), but the server is not: the
+    # bridge command queue lives in the host keyvalue store below.
     mcp.ai/statefulness: stateless
     mcp.ai/transport: "streamable-http"
   annotations:
@@ -32,10 +34,20 @@ spec:
       interfaces: ["handler"]
       config:
         host: after-effects-mcp.localhost
+    # Holds the one-slot command queue that connects an MCP tool call to the
+    # After Effects panel poll that services it. Those are two separate HTTP
+    # requests and may land on different instances, so the queue cannot live
+    # in component memory. Without this interface the component will not
+    # instantiate.
+    - namespace: wasi
+      package: keyvalue
+      interfaces: ["store"]
   components:
     - name: mcp
       image: oci-registry.localhost:8200/after-effects-mcp:0.1.0
-      poolSize: 1
+      # Several warm instances so a tool call waiting on a result never
+      # starves the panel's poll requests.
+      poolSize: 4
       maxInvocations: 0
       localResources:
         environment:
@@ -47,5 +59,11 @@ spec:
             # accepted — Cosmonic routes to this workload by Host header, so
             # this must match the hostInterface `host` above.
             MCP_ALLOWED_HOSTS: "after-effects-mcp.localhost"
-        # Outbound allow-list — empty means deny-all (fail-closed).
+            # Namespace for this server's keyvalue keys. Desktop's default
+            # bucket is host-wide, so two After Effects bridges sharing a
+            # prefix would steal each other's queued commands. Change this if
+            # you run a second one.
+            MCP_BRIDGE_KEY_PREFIX: "after-effects-mcp"
+        # Outbound allow-list — empty means deny-all (fail-closed). The bridge
+        # is *inbound*: After Effects dials this workload, never the reverse.
         allowedHosts: []
