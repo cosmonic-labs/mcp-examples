@@ -1,0 +1,70 @@
+name: Set up the Wasm toolchain
+description: >
+  Installs everything an MCP example needs to build and test: the Rust
+  wasm32-wasip2 target, plus wasm-tools, wasmtime, wac and wkg. The four
+  CLIs are fetched as prebuilt release binaries — `cargo install` on each
+  would take longer than the builds they support.
+
+inputs:
+  wasm-tools-version:
+    description: wasm-tools release to install (component world verification)
+    default: "1.255.0"
+  wasmtime-version:
+    description: wasmtime release to install; the e2e harness needs >= 46
+    default: "47.0.3"
+  wac-version:
+    description: wac release to install (after-effects-mcp composes a kv stub)
+    default: "0.10.1"
+  wkg-version:
+    description: wkg release to install (pushes the component to an OCI registry)
+    default: "0.16.0"
+
+runs:
+  using: composite
+  steps:
+    - name: Add the wasm32-wasip2 Rust target
+      shell: bash
+      run: rustup target add wasm32-wasip2
+
+    - name: Install wasm-tools, wasmtime, wac and wkg
+      shell: bash
+      env:
+        WASM_TOOLS_VERSION: ${{ inputs.wasm-tools-version }}
+        WASMTIME_VERSION: ${{ inputs.wasmtime-version }}
+        WAC_VERSION: ${{ inputs.wac-version }}
+        WKG_VERSION: ${{ inputs.wkg-version }}
+      run: |
+        set -euo pipefail
+        # Runner arch: x86_64 on ubuntu-latest, aarch64 on the -arm images.
+        # Every release below publishes assets for both.
+        arch=$(uname -m)
+        bin="$HOME/.local/bin"
+        mkdir -p "$bin" "$RUNNER_TEMP/toolchain"
+        cd "$RUNNER_TEMP/toolchain"
+
+        curl -fsSL -o wasm-tools.tar.gz \
+          "https://github.com/bytecodealliance/wasm-tools/releases/download/v${WASM_TOOLS_VERSION}/wasm-tools-${WASM_TOOLS_VERSION}-${arch}-linux.tar.gz"
+        tar xzf wasm-tools.tar.gz
+        mv "wasm-tools-${WASM_TOOLS_VERSION}-${arch}-linux/wasm-tools" "$bin/"
+
+        curl -fsSL -o wasmtime.tar.xz \
+          "https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-${arch}-linux.tar.xz"
+        tar xJf wasmtime.tar.xz
+        mv "wasmtime-v${WASMTIME_VERSION}-${arch}-linux/wasmtime" "$bin/"
+
+        curl -fsSL -o "$bin/wac" \
+          "https://github.com/bytecodealliance/wac/releases/download/v${WAC_VERSION}/wac-cli-${arch}-unknown-linux-musl"
+
+        curl -fsSL -o "$bin/wkg" \
+          "https://github.com/bytecodealliance/wasm-pkg-tools/releases/download/v${WKG_VERSION}/wkg-${arch}-unknown-linux-gnu"
+
+        chmod +x "$bin/wac" "$bin/wkg"
+        echo "$bin" >>"$GITHUB_PATH"
+
+    - name: Report tool versions
+      shell: bash
+      run: |
+        wasm-tools --version
+        wasmtime --version
+        wac --version
+        wkg --version

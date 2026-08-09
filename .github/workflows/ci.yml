@@ -1,0 +1,75 @@
+# Build and test every example. `cargo test` is not used — the build target is
+# wasm, so each example's hermetic scripts/e2e.sh is the test entry point. It
+# builds the component, serves it under `wasmtime serve`, and drives it over
+# HTTP; no network access and no Adobe app is involved.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - after-effects-mcp
+          - fred-mcp
+          - premiere-mcp
+          - sec-edgar-mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-wasm-toolchain
+
+      - name: Cache cargo registry and build outputs
+        uses: actions/cache@v4
+        with:
+          # Keyed per example: each is a standalone cargo project, and a shared
+          # key across the matrix would have the four jobs racing to write it.
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ matrix.package }}/target
+            ${{ matrix.package }}/testing/kv-stub/target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-${{ hashFiles(format('{0}/**/Cargo.lock', matrix.package)) }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package }}-
+
+      - name: Run the e2e suite
+        working-directory: ${{ matrix.package }}
+        run: ./scripts/e2e.sh
+
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check formatting in every example
+        run: |
+          set -euo pipefail
+          for pkg in after-effects-mcp fred-mcp premiere-mcp sec-edgar-mcp; do
+            echo "== $pkg =="
+            (cd "$pkg" && cargo fmt --check)
+          done
+
+  manifests:
+    name: deployment manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check deploy manifests against Cargo versions
+        run: ./scripts/check-manifests.sh

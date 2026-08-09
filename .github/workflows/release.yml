@@ -1,0 +1,221 @@
+# Publishes one example's component to GHCR as an OCI artifact, so that its
+# deploy/workload.yaml resolves to a real image.
+#
+# Trigger by pushing a per-example tag, `<example>/v<version>`, where the
+# version matches that example's Cargo.toml:
+#
+#   git tag fred-mcp/v0.1.0 && git push origin fred-mcp/v0.1.0
+#
+# The tag version, the crate version and the image in deploy/workload.yaml are
+# checked against each other before anything is pushed — a release that would
+# leave the manifest pointing at a tag that does not exist fails instead.
+name: Release
+
+on:
+  push:
+    tags:
+      # `*` does not match `/`, so this is exactly `<example>/v<version>`.
+      - "*-mcp/v*"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Example to release (version comes from its Cargo.toml)
+        required: true
+        type: choice
+        options:
+          - after-effects-mcp
+          - fred-mcp
+          - premiere-mcp
+          - sec-edgar-mcp
+      dry_run:
+        description: Build and test, but do not push to GHCR
+        type: boolean
+        default: false
+
+concurrency:
+  # One release at a time per example; never cancel a push mid-flight.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release
+      packages: write # push to ghcr.io/cosmonic-labs/*
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve the example and version
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_PACKAGE: ${{ inputs.package }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          tag_version=""
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            pkg="$INPUT_PACKAGE"
+            dry_run="$DRY_RUN"
+          else
+            ref="${GITHUB_REF#refs/tags/}"   # e.g. fred-mcp/v0.1.0
+            pkg="${ref%%/*}"
+            tag_version="${ref#*/v}"
+            dry_run="false"
+          fi
+
+          case "$pkg" in
+            after-effects-mcp|fred-mcp|premiere-mcp|sec-edgar-mcp) ;;
+            *) echo "::error::unknown example '$pkg' (tag must be <example>/v<version>)"; exit 1 ;;
+          esac
+
+          version=$(sed -n '/^\[package\]/,/^\[/ s/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' \
+            "$pkg/Cargo.toml" | head -1)
+          if [ -z "$version" ]; then
+            echo "::error::could not read the version from $pkg/Cargo.toml"; exit 1
+          fi
+
+          # A tag that disagrees with the crate would publish an image the
+          # manifest does not reference. Stop before the push, not after.
+          if [ -n "$tag_version" ] && [ "$tag_version" != "$version" ]; then
+            echo "::error::tag says v$tag_version but $pkg/Cargo.toml says $version"; exit 1
+          fi
+
+          description=$(sed -n 's/^description[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' \
+            "$pkg/Cargo.toml" | head -1)
+          # cargo replaces `-` with `_` in the library artifact name.
+          wasm="$pkg/target/wasm32-wasip2/release/$(echo "$pkg" | tr '-' '_').wasm"
+
+          {
+            echo "package=$pkg"
+            echo "version=$version"
+            echo "description=$description"
+            echo "wasm=$wasm"
+            echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER}/$pkg"
+            echo "dry_run=$dry_run"
+          } >>"$GITHUB_OUTPUT"
+
+          echo "releasing $pkg $version -> ghcr.io/${GITHUB_REPOSITORY_OWNER}/$pkg:$version"
+
+      - name: Check the deployment manifests
+        run: ./scripts/check-manifests.sh ${{ steps.resolve.outputs.package }}
+
+      - uses: ./.github/actions/setup-wasm-toolchain
+
+      - name: Cache cargo registry and build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ steps.resolve.outputs.package }}/target
+            ${{ steps.resolve.outputs.package }}/testing/kv-stub/target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.package }}-${{ hashFiles(format('{0}/**/Cargo.lock', steps.resolve.outputs.package)) }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.package }}-
+
+      - name: Build and run the e2e suite
+        working-directory: ${{ steps.resolve.outputs.package }}
+        run: ./scripts/e2e.sh
+
+      - name: Confirm the component exports wasi:http/handler@0.3.0
+        run: |
+          set -euo pipefail
+          # The e2e suite asserts this too, but on the composed artifact for
+          # after-effects-mcp. Re-check the exact file about to be pushed.
+          wasm-tools component wit "${{ steps.resolve.outputs.wasm }}" \
+            | grep -q 'export wasi:http/handler@0.3.0'
+
+      - name: Push the component to GHCR
+        if: steps.resolve.outputs.dry_run != 'true'
+        env:
+          IMAGE: ${{ steps.resolve.outputs.image }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+          WASM: ${{ steps.resolve.outputs.wasm }}
+          DESCRIPTION: ${{ steps.resolve.outputs.description }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # org.opencontainers.image.source is what links the package to this
+          # repository in the GitHub UI and lets it inherit repo permissions.
+          annotations=(
+            --annotation "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+            --annotation "org.opencontainers.image.description=${DESCRIPTION}"
+            --annotation "org.opencontainers.image.licenses=Apache-2.0"
+            --annotation "org.opencontainers.image.version=${VERSION}"
+            --annotation "org.opencontainers.image.revision=${GITHUB_SHA}"
+          )
+          wkg oci push "${IMAGE}:${VERSION}" "$WASM" \
+            -u "${GITHUB_ACTOR}" -p "$GHCR_TOKEN" "${annotations[@]}"
+          # `latest` is a convenience for `wash oci pull`; the manifests pin a
+          # version, and the release notes give the digest to pin harder.
+          wkg oci push "${IMAGE}:latest" "$WASM" \
+            -u "${GITHUB_ACTOR}" -p "$GHCR_TOKEN" "${annotations[@]}"
+
+      - name: Resolve the published digest
+        id: digest
+        if: steps.resolve.outputs.dry_run != 'true'
+        env:
+          IMAGE: ${{ steps.resolve.outputs.image }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo="${IMAGE#ghcr.io/}"
+          token=$(curl -fsSL -u "${GITHUB_ACTOR}:${GHCR_TOKEN}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull" | jq -r .token)
+          digest=$(curl -fsSI -H "Authorization: Bearer ${token}" \
+            -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+            "https://ghcr.io/v2/${repo}/manifests/${VERSION}" \
+            | tr -d '\r' | awk 'tolower($1) == "docker-content-digest:" { print $2 }')
+          if [ -z "$digest" ]; then
+            echo "::warning::could not read the manifest digest back from GHCR"
+          fi
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+          {
+            echo "### ${IMAGE}:${VERSION}"
+            echo
+            echo '```'
+            echo "${IMAGE}:${VERSION}${digest:+@$digest}"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Create the GitHub Release
+        if: github.event_name == 'push' && steps.resolve.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE: ${{ steps.resolve.outputs.package }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+          IMAGE: ${{ steps.resolve.outputs.image }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          WASM: ${{ steps.resolve.outputs.wasm }}
+        run: |
+          set -euo pipefail
+          notes=$(mktemp)
+          {
+            echo "\`${PACKAGE}\` ${VERSION} — a WASI p3 WebAssembly component"
+            echo "exporting \`wasi:http/handler@0.3.0\`, built from \`${GITHUB_SHA}\`."
+            echo
+            echo "Deploy it on Cosmonic Desktop with [\`${PACKAGE}/deploy/workload.yaml\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/${PACKAGE}/deploy/workload.yaml), which references:"
+            echo
+            echo '```'
+            echo "${IMAGE}:${VERSION}"
+            echo '```'
+            if [ -n "$DIGEST" ]; then
+              echo
+              echo "To pin by digest instead:"
+              echo
+              echo '```'
+              echo "${IMAGE}:${VERSION}@${DIGEST}"
+              echo '```'
+            fi
+          } >"$notes"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "${PACKAGE} ${VERSION}" \
+            --notes-file "$notes" \
+            "${WASM}#${PACKAGE}-${VERSION}.wasm"
