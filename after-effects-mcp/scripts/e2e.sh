@@ -44,7 +44,9 @@ WASM="$PLUGGED"
 # The stub keeps state in a preopened directory, because `wasmtime serve`
 # builds a fresh instance per request and anything in linear memory would not
 # outlive the request that wrote it.
-KV_DIR=$(mktemp -d -t ae-mcp-kv)
+# Spelled out rather than `mktemp -d -t ae-mcp-kv`: BSD mktemp reads -t as a
+# prefix, GNU mktemp reads it as a template and rejects one with no X's.
+KV_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ae-mcp-kv.XXXXXX") || exit 1
 trap 'rm -rf "$KV_DIR" "${KV_DIR}-guard"' EXIT
 
 mkdir -p "${KV_DIR}-guard"
