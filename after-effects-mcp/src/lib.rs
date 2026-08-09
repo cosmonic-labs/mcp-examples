@@ -1,11 +1,21 @@
-//! MCP server template for Cosmonic Desktop.
+//! MCP server that drives a live Adobe After Effects instance.
 //!
 //! This component exports [`wasi:http/handler@0.3.0`] (WASI p3) and serves the
 //! Model Context Protocol over the streamable HTTP transport from the official
 //! [`rmcp`] SDK, in the stateless mode introduced by the 2026-07-28 MCP
 //! specification.
 //!
-//! Responses stream: headers are returned to the host as soon as `rmcp`
+//! It answers on two surfaces:
+//!
+//! - the **MCP transport**, for clients — see [`server`] for the pure-compute
+//!   helper tools and [`live`] for the ones that drive After Effects;
+//! - **`/bridge/*`**, polled by the ScriptUI panel running inside After
+//!   Effects, which claims queued commands and posts results back. Those
+//!   routes are handled in [`serve_bridge_endpoint`], deliberately before the
+//!   request lock: a poll queued behind the tool call that is waiting for it
+//!   would deadlock the pair.
+//!
+//! MCP responses stream: headers are returned to the host as soon as `rmcp`
 //! produces them, and body frames (including SSE events from long-running
 //! tools) are pumped to the `wasi:http` body stream as they materialize. See
 //! [`bridge`] for how the tokio and component-model async worlds interlock,
@@ -15,7 +25,9 @@
 //! [`wasi:http/handler@0.3.0`]: https://github.com/WebAssembly/wasi-http
 
 pub mod bridge;
+mod live;
 mod server;
+mod state;
 mod telemetry;
 
 use std::pin::Pin;
@@ -25,6 +37,7 @@ use http_body::Body;
 use http_body_util::{BodyExt, Full};
 use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
+use serde_json::json;
 use wasip3::http::types::{ErrorCode, Fields, Request, Response};
 use wasip3::http_compat::{http_from_wasi_request, BodyWriter};
 
@@ -62,6 +75,15 @@ impl wasip3::exports::http::handler::Guest for Component {
                 ))));
             }
         };
+        // The After Effects panel's own endpoints are served here, before the
+        // request lock. They touch neither rmcp nor the tokio world — just the
+        // keyvalue store — and they MUST NOT queue behind an in-flight tool
+        // call, because that tool call is very likely waiting on the poll they
+        // are trying to make.
+        if let Some(response) = serve_bridge_endpoint(&parts, &bytes) {
+            return response;
+        }
+
         let request = http::Request::from_parts(parts, Full::new(bytes));
 
         // One exchange at a time per instance: the bridge can only drive one
@@ -190,25 +212,114 @@ fn transport_config() -> StreamableHttpServerConfig {
     config
 }
 
-/// Builds a plain-text `413 Payload Too Large` response without involving the
-/// MCP transport (the request was rejected before it could be parsed).
-fn payload_too_large(limit: usize) -> Result<Response, ErrorCode> {
-    let headers = Fields::from_list(&[(
-        "content-type".to_string(),
-        b"text/plain; charset=utf-8".to_vec(),
-    )])
-    .map_err(|err| ErrorCode::InternalError(Some(format!("invalid headers: {err}"))))?;
+/// The ScriptUI panel source, served at `/bridge/panel.jsx` so the copy the
+/// panel runs and the copy this component expects can never drift.
+const PANEL_SCRIPT: &str = include_str!("../bridge/mcp-bridge-auto.jsx");
+
+/// Serves the endpoints the After Effects bridge panel uses, or returns
+/// `None` for anything that belongs to the MCP transport.
+///
+/// Everything here is synchronous keyvalue work: no tokio, no request lock,
+/// no outbound I/O.
+fn serve_bridge_endpoint(
+    parts: &http::request::Parts,
+    body: &bytes::Bytes,
+) -> Option<Result<Response, ErrorCode>> {
+    let query = parts.uri.query();
+    match (&parts.method, parts.uri.path()) {
+        (&http::Method::GET, "/bridge/command") => {
+            // `v=2` marks a panel that can parse our responses; older ones
+            // mishandle LF-only headers and would consume commands then drop
+            // them. `client` is the panel instance — the newest wins, so
+            // reloading the panel supersedes the old one instead of the two
+            // racing for commands.
+            let client = query.and_then(|q| param(q, "client")).unwrap_or(0);
+            let current = state::register_client(client).unwrap_or(false);
+            let serving = query.and_then(|q| param::<u32>(q, "v")) == Some(2) && current;
+
+            // Stamp every poll, served or not: recording only served polls
+            // makes a stale panel indistinguishable from no panel at all,
+            // which sends whoever is debugging to the wrong fix.
+            let _ = state::record_poll(serving);
+
+            let body = if serving {
+                match state::take_pending_command() {
+                    Ok(Some(command)) => command.to_string(),
+                    Ok(None) => json!({ "command": null }).to_string(),
+                    Err(err) => {
+                        return Some(json_response(500, &json!({ "error": err })));
+                    }
+                }
+            } else {
+                json!({
+                    "command": null,
+                    "note": "this panel is outdated or has been superseded by a newer \
+                             panel instance; reinstall with ./install-bridge.sh and \
+                             reopen Window > mcp-bridge-auto.jsx",
+                })
+                .to_string()
+            };
+            Some(simple_response(200, "application/json", body))
+        }
+        (&http::Method::POST, "/bridge/result") => {
+            let id = query.and_then(|q| param(q, "id"));
+            Some(match state::store_result(id, body) {
+                Ok(()) => json_response(200, &json!({ "status": "ok" })),
+                Err(err) => json_response(500, &json!({ "error": err })),
+            })
+        }
+        (&http::Method::GET, "/bridge/panel.jsx") => Some(simple_response(
+            200,
+            "application/javascript; charset=utf-8",
+            PANEL_SCRIPT,
+        )),
+        (&http::Method::GET, "/healthz") => Some(simple_response(200, "text/plain", "ok\n")),
+        _ => None,
+    }
+}
+
+/// Reads one `name=value` pair out of a query string.
+fn param<T: std::str::FromStr>(query: &str, name: &str) -> Option<T> {
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(key, _)| *key == name)
+        .and_then(|(_, value)| value.parse().ok())
+}
+
+fn json_response(status: u16, value: &serde_json::Value) -> Result<Response, ErrorCode> {
+    simple_response(status, "application/json", value.to_string())
+}
+
+/// Builds a complete, non-streaming response outside the MCP transport.
+fn simple_response(
+    status: u16,
+    content_type: &str,
+    body: impl Into<bytes::Bytes>,
+) -> Result<Response, ErrorCode> {
+    let headers =
+        Fields::from_list(&[("content-type".to_string(), content_type.as_bytes().to_vec())])
+            .map_err(|err| ErrorCode::InternalError(Some(format!("invalid headers: {err}"))))?;
     let (mut writer, body_rx, result_rx) = BodyWriter::new();
     let (response, _transmit) = Response::new(headers, Some(body_rx), result_rx);
     response
-        .set_status_code(413)
+        .set_status_code(status)
         .map_err(|()| ErrorCode::InternalError(Some("invalid status code".into())))?;
+    let body = body.into();
     wasip3::wit_bindgen::spawn(async move {
-        let message = format!("Payload Too Large: request body exceeds {limit} bytes");
-        let frame = http_body::Frame::data(bytes::Bytes::from(message));
-        let _ = writer.send_frame(frame).await;
+        let _ = writer.send_frame(http_body::Frame::data(body)).await;
         drop(writer.stream_writer);
         let _ = writer.result_writer.write(Ok(None)).await;
     });
     Ok(response)
+}
+
+/// Builds a plain-text `413 Payload Too Large` response without involving the
+/// MCP transport (the request was rejected before it could be parsed).
+fn payload_too_large(limit: usize) -> Result<Response, ErrorCode> {
+    simple_response(
+        413,
+        "text/plain; charset=utf-8",
+        format!("Payload Too Large: request body exceeds {limit} bytes"),
+    )
 }
