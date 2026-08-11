@@ -60,7 +60,7 @@ The daemon's control socket is
 
 If you just want to run one, skip to step 3 and apply `deploy/workload.yaml`:
 it references a public image on GHCR
-(`ghcr.io/cosmonic-labs/<name>:<version>`), so nothing needs building. Steps 1
+(`ghcr.io/cosmonic-labs/mcp-examples/<name>:<version>`), so nothing needs building. Steps 1
 and 2 are for iterating on your own copy.
 
 1. **Register** the project directory (it has a `.wash/config.yaml`):
@@ -148,7 +148,7 @@ $ git push origin fred-mcp/v0.1.0
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) then checks
 the manifests, builds the component, runs its e2e suite, and only on success
-pushes it to `ghcr.io/cosmonic-labs/<example>` — as an OCI **wasm artifact**
+pushes it to `ghcr.io/cosmonic-labs/mcp-examples/<example>` — as an OCI **wasm artifact**
 (`application/wasm` layer, pushed with `wkg`), not a container image — under
 both `<version>` and `latest`. It finishes by cutting a GitHub Release whose
 notes carry the digest-pinned reference. Use `workflow_dispatch` (with

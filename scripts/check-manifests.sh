@@ -14,7 +14,9 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-REGISTRY="ghcr.io/cosmonic-labs"
+# Packages live under the repository's own namespace: the org's top level is
+# shared, and `sec-edgar-mcp` there already belongs to another repo.
+REGISTRY="ghcr.io/cosmonic-labs/mcp-examples"
 LOCAL_REGISTRY="oci-registry.localhost:8200"
 
 FAIL=0
