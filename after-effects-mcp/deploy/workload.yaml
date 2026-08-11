@@ -39,7 +39,7 @@ spec:
       # Desktop pins this tag to a digest at apply time. To deploy a locally
       # promoted build instead, use the digest-pinned
       # oci-registry.localhost:8200 reference that promote returns.
-      image: "ghcr.io/cosmonic-labs/after-effects-mcp:0.1.0"
+      image: "ghcr.io/cosmonic-labs/mcp-examples/after-effects-mcp:0.1.0"
       # Several warm instances so a tool call waiting on a result never
       # starves the After Effects panel's poll requests.
       poolSize: 4

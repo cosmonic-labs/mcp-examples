@@ -32,7 +32,7 @@ spec:
       # Desktop pins this tag to a digest at apply time. To deploy a locally
       # promoted build instead, use the digest-pinned
       # oci-registry.localhost:8200 reference that promote returns.
-      image: "ghcr.io/cosmonic-labs/sec-edgar-mcp:0.1.0"
+      image: "ghcr.io/cosmonic-labs/mcp-examples/sec-edgar-mcp:0.1.0"
       poolSize: 1
       maxInvocations: 0
       localResources:

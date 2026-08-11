@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the GitHub Release
-      packages: write # push to ghcr.io/cosmonic-labs/*
+      packages: write # push to ghcr.io/cosmonic-labs/mcp-examples/*
     steps:
       - uses: actions/checkout@v4
 
@@ -95,11 +95,13 @@ jobs:
             echo "version=$version"
             echo "description=$description"
             echo "wasm=$wasm"
-            echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER}/$pkg"
+            # Namespaced by repository: the org's top-level package names are
+            # shared across repos, and a collision there is a hard 403 at push.
+            echo "image=ghcr.io/${GITHUB_REPOSITORY}/$pkg"
             echo "dry_run=$dry_run"
           } >>"$GITHUB_OUTPUT"
 
-          echo "releasing $pkg $version -> ghcr.io/${GITHUB_REPOSITORY_OWNER}/$pkg:$version"
+          echo "releasing $pkg $version -> ghcr.io/${GITHUB_REPOSITORY}/$pkg:$version"
 
       - name: Check the deployment manifests
         run: ./scripts/check-manifests.sh ${{ steps.resolve.outputs.package }}
@@ -215,7 +217,11 @@ jobs:
               echo '```'
             fi
           } >"$notes"
+          # cargo names the artifact after the lib target (premiere_mcp.wasm);
+          # attach it under the name a reader would expect to download.
+          asset="$RUNNER_TEMP/${PACKAGE}-${VERSION}.wasm"
+          cp "$WASM" "$asset"
           gh release create "$GITHUB_REF_NAME" \
             --title "${PACKAGE} ${VERSION}" \
             --notes-file "$notes" \
-            "${WASM}#${PACKAGE}-${VERSION}.wasm"
+            "$asset"
