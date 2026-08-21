@@ -1,0 +1,58 @@
+# Cosmonic Desktop / wasmCloud v2 Workload for a LOCALLY built cfpb-complaints-mcp.
+#
+# This manifest points at Desktop's built-in registry, for the promote loop.
+# To run the published image instead, apply deploy/workload.yaml — it needs
+# nothing built.
+#
+# Replace `image` with the digest-pinned reference promote returns to pin the
+# deployment. Desktop caches the local registry by tag, so re-pushing new
+# content under a tag it has already pulled keeps serving the old layer: bump
+# the tag or pin the digest on every rebuild.
+apiVersion: runtime.wasmcloud.dev/v1alpha1
+kind: Workload
+metadata:
+  name: cfpb-complaints-mcp
+  namespace: default
+  # MCP metadata convention used by Cosmonic Desktop to catalog MCP servers.
+  labels:
+    app.kubernetes.io/name: "cfpb-complaints-mcp"
+    app.kubernetes.io/version: "0.1.0"
+    "mcp.ai/auth-type": none
+    mcp.ai/domain: "cfpb-consumer-complaints"
+    "mcp.ai/function-type": tools
+    "mcp.ai/spec-version": "2026-07-28"
+    mcp.ai/statefulness: stateless
+    mcp.ai/transport: "streamable-http"
+  annotations:
+    desktop.cosmonic.com/source: mcp
+spec:
+  hostInterfaces:
+    - namespace: wasi
+      package: http
+      # wasi:http@0.3.0 (WASI p3): the single `handler` interface is this
+      # component's ingress export — not the p2 `incoming-handler`.
+      interfaces: ["handler"]
+      config:
+        host: cfpb-complaints-mcp.localhost
+  components:
+    - name: mcp
+      image: oci-registry.localhost:8200/cfpb-complaints-mcp:0.1.0
+      poolSize: 1
+      maxInvocations: 0
+      localResources:
+        environment:
+          config:
+            RUST_LOG: info
+            # DNS-rebinding guard: hosts the transport accepts in the Host
+            # header (`host` matches any port; `host:port` is exact; `*`
+            # disables the guard). Unset, only localhost/127.0.0.1/::1 are
+            # accepted — Cosmonic routes to this workload by Host header, so
+            # this must match the hostInterface `host` above.
+            MCP_ALLOWED_HOSTS: "cfpb-complaints-mcp.localhost"
+            # A wide facet (group_by=company, top=100) or a large search page
+            # can exceed the default 4 MiB outbound response cap.
+            MCP_OUTBOUND_MAX_BYTES: "16777216"
+        # Outbound allow-list — the complaint API is served entirely from this
+        # one host. Empty = deny-all.
+        allowedHosts:
+          - www.consumerfinance.gov

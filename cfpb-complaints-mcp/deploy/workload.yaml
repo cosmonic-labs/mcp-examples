@@ -1,0 +1,52 @@
+# Cosmonic Desktop deployment manifest for the PUBLISHED cfpb-complaints-mcp
+# image. Nothing needs building — apply this and the daemon pulls it from GHCR.
+#
+# Local iteration uses ../workload.yaml (Desktop's built-in registry).
+# Docs: https://cosmonic.com/docs/desktop
+apiVersion: runtime.wasmcloud.dev/v1alpha1
+kind: Workload
+metadata:
+  name: "cfpb-complaints-mcp"
+  namespace: default
+  labels:
+    app.kubernetes.io/name: "cfpb-complaints-mcp"
+    app.kubernetes.io/version: "0.1.0"
+    "mcp.ai/auth-type": none
+    mcp.ai/domain: "cfpb-consumer-complaints"
+    "mcp.ai/function-type": tools
+    "mcp.ai/spec-version": "2026-07-28"
+    mcp.ai/statefulness: stateless
+    mcp.ai/transport: "streamable-http"
+  annotations:
+    desktop.cosmonic.com/source: mcp
+spec:
+  hostInterfaces:
+    - namespace: wasi
+      package: http
+      # wasi:http@0.3.0 (WASI p3): the single `handler` interface is this
+      # component's ingress export — not the p2 `incoming-handler`.
+      interfaces:
+        - "handler"
+      config:
+        host: "cfpb-complaints-mcp.localhost.cosmonic.sh"
+  components:
+    - name: "cfpb-complaints-mcp"
+      # Desktop pins this tag to a digest at apply time.
+      image: "ghcr.io/cosmonic-labs/mcp-examples/cfpb-complaints-mcp:0.1.0"
+      poolSize: 1
+      maxInvocations: 0
+      localResources:
+        environment:
+          config:
+            RUST_LOG: info
+            # DNS-rebinding guard: must list every ingress host above, or the
+            # deployment answers nothing but `Forbidden`. Both names are listed
+            # so the same manifest works on either Desktop ingress domain.
+            MCP_ALLOWED_HOSTS: "cfpb-complaints-mcp.localhost.cosmonic.sh,cfpb-complaints-mcp.localhost"
+            # A wide facet (group_by=company, top=100) or a large search page
+            # can exceed the default 4 MiB outbound response cap.
+            MCP_OUTBOUND_MAX_BYTES: "16777216"
+        # Outbound allow-list — the complaint API is served entirely from this
+        # one host. Empty = deny-all.
+        allowedHosts:
+          - www.consumerfinance.gov

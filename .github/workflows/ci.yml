@@ -26,6 +26,7 @@ jobs:
       matrix:
         package:
           - after-effects-mcp
+          - cfpb-complaints-mcp
           - fred-mcp
           - premiere-mcp
           - sec-edgar-mcp
@@ -61,7 +62,7 @@ jobs:
       - name: Check formatting in every example
         run: |
           set -euo pipefail
-          for pkg in after-effects-mcp fred-mcp premiere-mcp sec-edgar-mcp; do
+          for pkg in after-effects-mcp cfpb-complaints-mcp fred-mcp premiere-mcp sec-edgar-mcp; do
             echo "== $pkg =="
             (cd "$pkg" && cargo fmt --check)
           done

@@ -24,6 +24,7 @@ on:
         type: choice
         options:
           - after-effects-mcp
+          - cfpb-complaints-mcp
           - fred-mcp
           - premiere-mcp
           - sec-edgar-mcp
@@ -69,7 +70,7 @@ jobs:
           fi
 
           case "$pkg" in
-            after-effects-mcp|fred-mcp|premiere-mcp|sec-edgar-mcp) ;;
+            after-effects-mcp|cfpb-complaints-mcp|fred-mcp|premiere-mcp|sec-edgar-mcp) ;;
             *) echo "::error::unknown example '$pkg' (tag must be <example>/v<version>)"; exit 1 ;;
           esac
 

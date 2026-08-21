@@ -115,7 +115,7 @@ check_package() {
 
 PACKAGES=("$@")
 if [ ${#PACKAGES[@]} -eq 0 ]; then
-  PACKAGES=(after-effects-mcp fred-mcp premiere-mcp sec-edgar-mcp)
+  PACKAGES=(after-effects-mcp cfpb-complaints-mcp fred-mcp premiere-mcp sec-edgar-mcp)
 fi
 
 for pkg in "${PACKAGES[@]}"; do

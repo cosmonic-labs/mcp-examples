@@ -1,11 +1,11 @@
 # Cosmonic MCP examples
 
-Four example **Model Context Protocol (MCP) servers**, each built as a
+Five example **Model Context Protocol (MCP) servers**, each built as a
 **WebAssembly component** with
 [mcp-server-template-rs](https://github.com/cosmonic-labs/mcp-server-template-rs)
 and deployable to [Cosmonic Desktop](https://cosmonic.com). They are worked
 examples of the MCP-server "factory": the same template, the same guardrails,
-four different shapes of server.
+five different shapes of server.
 
 Every example:
 
@@ -15,20 +15,21 @@ Every example:
 - deploys to Cosmonic Desktop with a `workload.yaml` (local builds) and a
   `deploy/workload.yaml` (the published image).
 
-## The four examples
+## The five examples
 
 | Example | What it shows | Tools |
 |---|---|---|
 | [**after-effects-mcp**](after-effects-mcp/) | **Driving a live desktop app** via a polling bridge + `wasi:keyvalue` state | create/animate compositions, layers, keyframes, expressions, masks, cameras, effects; render frames; plus pure-compute timecode/easing/colour helpers |
 | [**premiere-mcp**](premiere-mcp/) | Pure-compute with tricky domain math | SMPTE **drop-frame** timecode, offset, sequence duration, frame-rate conform |
 | [**sec-edgar-mcp**](sec-edgar-mcp/) | **Outbound HTTP**, no key, caching | SEC EDGAR company facts & filing history (ticker→CIK, `SEC_USER_AGENT`) |
+| [**cfpb-complaints-mcp**](cfpb-complaints-mcp/) | **Outbound HTTP against a large, quirky dataset** — faceted search, aggregations, and correcting misleading upstream semantics | CFPB consumer complaints: search, single record, facet ranking, time-series trends, company autocomplete |
 | [**fred-mcp**](fred-mcp/) | **Outbound HTTP with an API key** | FRED economic-data search, series metadata & observations (`FRED_API_KEY`) |
 
 Together they cover the whole framework surface: pure compute, domain-math
 correctness, outbound APIs, caching, secrets, host state, controlling a local
-application a component cannot call directly, and the concurrency/robustness
-patterns the template enforces (bounded buffers, deadlines, panic-free numeric
-code, DNS-rebinding and SSRF guards).
+application a component cannot call directly, faceted search over millions of
+records, and the concurrency/robustness patterns the template enforces (bounded
+buffers, deadlines, panic-free numeric code, DNS-rebinding and SSRF guards).
 
 The reusable test harness is [`scripts/mcp_e2e_lib.sh`](scripts/mcp_e2e_lib.sh):
 each example's `e2e.sh` sources it for the framework-level checks (protocol,
