@@ -32,6 +32,20 @@ rmcp 3.x, MCP spec 2026-07-28, exports `wasi:http/handler@0.3.0`.
 4. **Open the panel:** Window → `mcp-bridge-auto.jsx`. Leave it open. If your
    deployment uses a different ingress name, set it in the panel's *Host* field.
 
+**Agents (no menu click needed):** the panel can be launched programmatically —
+save `GET /bridge/panel.jsx` to a file and run
+
+```bash
+osascript -e 'tell application "Adobe After Effects 2026" to DoScriptFile "<file>"'
+```
+
+It opens as a floating palette and starts polling immediately (steps 2 and 4
+become optional). To replace a running palette with a newer one, close it first:
+
+```bash
+osascript -e 'tell application "Adobe After Effects 2026" to DoScript "(function(){var w=Window.find(\"palette\",\"MCP Bridge Auto\");if(w){w.close()}})()"'
+```
+
 `bridge_status` tells you whether the panel is connected; `get_help` repeats
 these steps and lists effect match names.
 
@@ -47,9 +61,10 @@ these steps and lists effect match names.
 | `get_project_info` / `list_compositions` / `get_layer_info` | Read the project |
 | `create_composition` / `set_composition_properties` / `delete_composition` | Compositions |
 | `create_text_layer` / `create_shape_layer` / `create_solid_layer` / `add_image_layer` / `create_camera` | Create layers |
+| `create_null_layer` / `set_layer_parent` | Rigging: nulls and parenting (2D camera rigs) |
 | `set_layer_properties` / `batch_set_layer_properties` | Transform, timing, blend mode, text |
 | `duplicate_layer` / `delete_layer` | Layer lifecycle |
-| `set_layer_keyframe` / `set_layer_expression` | Animation |
+| `set_layer_keyframe` / `set_layer_expression` | Animation, with per-key easing and straight-path spatial control |
 | `set_layer_mask` | Masks, by rectangle or arbitrary outline |
 | `apply_effect` / `apply_effect_template` | Effects |
 | `run_batch` | Many commands in one round trip, one undo group |
@@ -82,8 +97,18 @@ All tools return `structuredContent` alongside text.
   batch.
 - **Verify visually.** `save_frame_png` renders a frame to disk — the only way
   to actually see what was built.
-- **Prefer names to indices.** `compName` beats `compIndex`: project item
-  indices shift whenever footage is imported.
+- **Prefer names to indices.** `compName` beats `compIndex` and `layerName`
+  beats `layerIndex`: project item indices shift whenever footage is imported,
+  and layer indices shift every time a layer is added.
+- **Rig 2D "cameras" with a null.** Create a null at position `[0, 0]` /
+  anchor `[0, 0]`, parent the scene's layers to it, and keyframe the null's
+  Position and Scale. For a target `(cx, cy)` at zoom `s` in a WxH comp, the
+  null goes to `(W/2 - cx*s, H/2 - cy*s)` at scale `100*s`.
+- **Parent before you animate.** `set_layer_parent` compensates like the
+  pick-whip — author layers at absolute positions, parent them, then keyframe.
+- **Ease your keys.** `easing: "easeInOut"` on `set_layer_keyframe` is classic
+  Easy Ease; `spatialInterpolation: "linear"` keeps right-angle motion paths
+  from bowing into curves.
 - **Two failure modes are distinguished on purpose.** A command queued with no
   panel listening comes back as a tool *error* saying so — the command is
   queued but nothing happened and nothing will until someone opens the panel.

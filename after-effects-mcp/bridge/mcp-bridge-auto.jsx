@@ -40,11 +40,15 @@ function createTextLayer(args) {
     try {
         var compName = args.compName || "";
         var text = args.text || "Text Layer";
-        var position = args.position || [960, 540]; 
+        // No default here: the composition is not resolved yet. A hardcoded
+        // [960, 540] silently misplaces layers in any non-1080p comp.
+        var position = args.position || null;
         var fontSize = args.fontSize || 72;
         var color = args.color || [1, 1, 1]; 
         var startTime = args.startTime || 0;
-        var duration = args.duration || 5; 
+        // No duration means "span the whole comp" — a silent 5s default used
+        // to truncate layers in any comp longer than 5s.
+        var duration = args.duration || 0;
         var fontFamily = args.fontFamily || "Arial";
         var alignment = args.alignment || "center"; 
         var comp = null;
@@ -66,7 +70,11 @@ function createTextLayer(args) {
         else if (alignment === "center") { textDocument.justification = ParagraphJustification.CENTER_JUSTIFY; } 
         else if (alignment === "right") { textDocument.justification = ParagraphJustification.RIGHT_JUSTIFY; }
         textProp.setValue(textDocument);
+        if (!position) { position = [comp.width / 2, comp.height / 2]; }
         textLayer.property("Position").setValue(position);
+        // An explicit layer name keeps the layer addressable even when many
+        // layers share the same text content.
+        if (args.name) { textLayer.name = args.name; }
         textLayer.startTime = startTime;
         if (duration > 0) { textLayer.outPoint = startTime + duration; }
         return JSON.stringify({
@@ -83,13 +91,17 @@ function createShapeLayer(args) {
     try {
         var compName = args.compName || "";
         var shapeType = args.shapeType || "rectangle"; 
-        var position = args.position || [960, 540]; 
+        // No default here: the composition is not resolved yet. A hardcoded
+        // [960, 540] silently misplaces layers in any non-1080p comp.
+        var position = args.position || null;
         var size = args.size || [200, 200]; 
         var fillColor = args.fillColor || [1, 0, 0]; 
         var strokeColor = args.strokeColor || [0, 0, 0]; 
         var strokeWidth = args.strokeWidth || 0; 
         var startTime = args.startTime || 0;
-        var duration = args.duration || 5; 
+        // No duration means "span the whole comp" — a silent 5s default used
+        // to truncate layers in any comp longer than 5s.
+        var duration = args.duration || 0;
         var name = args.name || "Shape Layer";
         var points = args.points || 5; 
         var comp = null;
@@ -148,6 +160,7 @@ function createShapeLayer(args) {
                 dashes.addProperty("ADBE Vector Stroke Gap 1").setValue(parseFloat(args.dash[1]));
             }
         }
+        if (!position) { position = [comp.width / 2, comp.height / 2]; }
         shapeLayer.property("Position").setValue(position);
         shapeLayer.startTime = startTime;
         if (duration > 0) { shapeLayer.outPoint = startTime + duration; }
@@ -435,10 +448,14 @@ function createSolidLayer(args) {
         var compName = args.compName || "";
         var color = args.color || [1, 1, 1]; 
         var name = args.name || "Solid Layer";
-        var position = args.position || [960, 540]; 
+        // No default here: the composition is not resolved yet. A hardcoded
+        // [960, 540] silently misplaces layers in any non-1080p comp.
+        var position = args.position || null;
         var size = args.size; 
         var startTime = args.startTime || 0;
-        var duration = args.duration || 5; 
+        // No duration means "span the whole comp" — a silent 5s default used
+        // to truncate layers in any comp longer than 5s.
+        var duration = args.duration || 0;
         var isAdjustment = args.isAdjustment || false; 
         var comp = null;
         for (var i = 1; i <= app.project.numItems; i++) {
@@ -457,6 +474,7 @@ function createSolidLayer(args) {
         } else {
             solidLayer = comp.layers.addSolid(color, name, size[0], size[1], 1);
         }
+        if (!position) { position = [comp.width / 2, comp.height / 2]; }
         solidLayer.property("Position").setValue(position);
         solidLayer.startTime = startTime;
         if (duration > 0) { solidLayer.outPoint = startTime + duration; }
@@ -809,11 +827,60 @@ function batchSetLayerProperties(args) {
  * @param {any} value - The value for the keyframe (e.g., [x, y] for Position, [w, h] for Scale, angle for Rotation, percentage for Opacity).
  * @returns {string} JSON string indicating success or error.
  */
+// Find a layer within a comp by name (preferred — layer indices shift as
+// layers are added) or by 1-based index.
+function findLayerIn(comp, layerName, layerIndex) {
+    if (layerName !== undefined && layerName !== null && layerName !== "") {
+        for (var i = 1; i <= comp.numLayers; i++) {
+            if (comp.layer(i).name === layerName) { return comp.layer(i); }
+        }
+        return null;
+    }
+    return comp.layers[layerIndex] || null;
+}
+
+// One KeyframeEase per dimension, except spatial properties which take
+// exactly one — After Effects rejects any other count.
+function easeArrayFor(property, influence) {
+    var vt = property.propertyValueType;
+    var n = 1;
+    if (vt === PropertyValueType.TwoD) { n = 2; }
+    else if (vt === PropertyValueType.ThreeD) { n = 3; }
+    var arr = [];
+    for (var i = 0; i < n; i++) { arr.push(new KeyframeEase(0, influence)); }
+    return arr;
+}
+
+// Apply temporal easing to the key nearest `timeInSeconds`. Mirrors the
+// keyframe assistant: easeIn shapes how the value arrives INTO the key,
+// easeOut how it leaves, easeInOut both (classic Easy Ease, influence 33).
+// The untouched side gets a near-zero influence, which is visually linear.
+function applyKeyframeEasing(property, timeInSeconds, easing, spatialInterpolation) {
+    var k = property.nearestKeyIndex(timeInSeconds);
+    if (easing === "hold") {
+        property.setInterpolationTypeAtKey(k, KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.HOLD);
+    } else if (easing === "linear") {
+        property.setInterpolationTypeAtKey(k, KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.LINEAR);
+    } else if (easing === "easeIn" || easing === "easeOut" || easing === "easeInOut") {
+        var inInf = (easing === "easeIn" || easing === "easeInOut") ? 33.334 : 0.1;
+        var outInf = (easing === "easeOut" || easing === "easeInOut") ? 33.334 : 0.1;
+        property.setTemporalEaseAtKey(k, easeArrayFor(property, inInf), easeArrayFor(property, outInf));
+    }
+    var vt = property.propertyValueType;
+    var spatial = vt === PropertyValueType.TwoD_SPATIAL || vt === PropertyValueType.ThreeD_SPATIAL;
+    if (spatial && spatialInterpolation === "linear") {
+        // Straight-line motion path through this key; AE's default auto-Bezier
+        // rounds corners, which drags right-angle paths off course.
+        try { property.setSpatialTangentsAtKey(k, [0, 0, 0], [0, 0, 0]); } catch (e) {}
+    }
+}
+
 // Accepts either a compName (preferred — project item indices shift whenever
-// footage is imported) or a positional compIndex. compName used to be accepted
-// by the caller and then dropped here, so a keyframe aimed at a named comp
-// silently landed in whichever comp happened to sit at index `undefined`.
-function setLayerKeyframe(compIndex, layerIndex, propertyName, timeInSeconds, value, compName) {
+// footage is imported) or a positional compIndex, and either a layerName
+// (preferred — layer indices shift as layers are added) or a layerIndex.
+// `easing`: linear | easeIn | easeOut | easeInOut | hold.
+// `spatialInterpolation`: "linear" forces a straight motion path at this key.
+function setLayerKeyframe(compIndex, layerIndex, propertyName, timeInSeconds, value, compName, layerName, easing, spatialInterpolation) {
     try {
         // Use 1-based indices as per After Effects API
         var comp = compName ? findCompByName(compName) : app.project.items[compIndex];
@@ -825,9 +892,9 @@ function setLayerKeyframe(compIndex, layerIndex, propertyName, timeInSeconds, va
                     : "Composition not found at index " + compIndex
             });
         }
-        var layer = comp.layers[layerIndex];
+        var layer = findLayerIn(comp, layerName, layerIndex);
         if (!layer) {
-            return JSON.stringify({ success: false, message: "Layer not found at index " + layerIndex + " in composition '" + comp.name + "'"});
+            return JSON.stringify({ success: false, message: "Layer not found (" + (layerName || ("index " + layerIndex)) + ") in composition '" + comp.name + "'"});
         }
 
         var transformGroup = layer.property("Transform");
@@ -855,13 +922,14 @@ function setLayerKeyframe(compIndex, layerIndex, propertyName, timeInSeconds, va
              return JSON.stringify({ success: false, message: "Property '" + propertyName + "' cannot be keyframed." });
         }
 
-        // Make sure the property is enabled for keyframing
-        if (property.numKeys === 0 && !property.isTimeVarying) {
-             property.setValueAtTime(comp.time, property.value); // Set initial keyframe if none exist
-        }
-
-
+        // No "initial keyframe" here: setValueAtTime alone starts the
+        // property varying. Injecting an extra key at the playhead with the
+        // current value used to silently pin every animated property to its
+        // static value at whatever time the playhead happened to sit.
         property.setValueAtTime(timeInSeconds, value);
+        if (easing || spatialInterpolation) {
+            applyKeyframeEasing(property, timeInSeconds, easing, spatialInterpolation);
+        }
 
         return JSON.stringify({ success: true, message: "Keyframe set for '" + propertyName + "' on layer '" + layer.name + "' at " + timeInSeconds + "s." });
     } catch (e) {
@@ -879,8 +947,9 @@ function setLayerKeyframe(compIndex, layerIndex, propertyName, timeInSeconds, va
  * @returns {string} JSON string indicating success or error.
  */
 // Accepts either a compName (preferred — project item indices shift whenever
-// footage is imported) or a positional compIndex.
-function setLayerExpression(compIndex, layerIndex, propertyName, expressionString, compName) {
+// footage is imported) or a positional compIndex, and either a layerName
+// (preferred) or a layerIndex.
+function setLayerExpression(compIndex, layerIndex, propertyName, expressionString, compName, layerName) {
     try {
         var comp = null;
         if (compName) {
@@ -891,9 +960,9 @@ function setLayerExpression(compIndex, layerIndex, propertyName, expressionStrin
          if (!comp || !(comp instanceof CompItem)) {
             return JSON.stringify({ success: false, message: "Composition not found (" + (compName || ("index " + compIndex)) + ")" });
         }
-        var layer = comp.layers[layerIndex];
+        var layer = findLayerIn(comp, layerName, layerIndex);
          if (!layer) {
-            return JSON.stringify({ success: false, message: "Layer not found at index " + layerIndex + " in composition '" + comp.name + "'"});
+            return JSON.stringify({ success: false, message: "Layer not found (" + (layerName || ("index " + layerIndex)) + ") in composition '" + comp.name + "'"});
         }
 
         var transformGroup = layer.property("Transform");
@@ -963,12 +1032,12 @@ function applyEffect(args) {
             throw new Error("Composition not found (" + (args.compName || ("index " + compIndex)) + ")");
         }
         
-        // Find the layer by index
-        var layer = comp.layer(layerIndex);
+        // Prefer layerName: layer indices shift as layers are added.
+        var layer = findLayerIn(comp, args.layerName, layerIndex);
         if (!layer) {
-            throw new Error("Layer not found at index " + layerIndex + " in composition '" + comp.name + "'");
+            throw new Error("Layer not found (" + (args.layerName || ("index " + layerIndex)) + ") in composition '" + comp.name + "'");
         }
-        
+
         var effectResult;
         
         // Apply preset if a path is provided
@@ -1142,7 +1211,7 @@ function applyEffectTemplate(args) {
             
             // Stylistic effects
             "glow": {
-                effectMatchName: "ADBE Glow",
+                effectMatchName: "ADBE Glo2",
                 settings: {
                     "Glow Threshold": customSettings.threshold || 50,
                     "Glow Radius": customSettings.radius || 15,
@@ -1188,7 +1257,7 @@ function applyEffectTemplate(args) {
                         }
                     },
                     {
-                        effectMatchName: "ADBE Glow",
+                        effectMatchName: "ADBE Glo2",
                         settings: {
                             "Glow Threshold": 50,
                             "Glow Radius": 10,
@@ -1946,6 +2015,73 @@ function deleteComposition(args) {
     }
 }
 
+// Create a null object layer — the standard parent for rigging a group of
+// layers (e.g. a 2D "camera" that pans/zooms a whole scene).
+function createNullLayer(args) {
+    try {
+        var comp = findCompByName(args.compName);
+        if (!comp) { return JSON.stringify({ status: "error", message: "no composition found" }); }
+        var layer = comp.layers.addNull(comp.duration);
+        if (args.name) { layer.name = args.name; }
+        if (args.anchorPoint) { layer.property("Anchor Point").setValue(args.anchorPoint); }
+        if (args.position) { layer.property("Position").setValue(args.position); }
+        var start = parseFloat(args.startTime) || 0;
+        layer.startTime = start;
+        if (args.duration && parseFloat(args.duration) > 0) { layer.outPoint = start + parseFloat(args.duration); }
+        return JSON.stringify({
+            status: "success",
+            layer: { name: layer.name, index: layer.index, position: layer.property("Position").value }
+        });
+    } catch (e) {
+        return JSON.stringify({ status: "error", message: e.toString() });
+    }
+}
+
+// Parent one or more layers to another layer (or clear the parent).
+//
+// Assigning `layer.parent` compensates like the pick-whip: the child's
+// transform values are rewritten so its world position is preserved at the
+// current time. Parent before animating either layer, so the compensation is
+// computed from static values and does not depend on the playhead.
+function setLayerParent(args) {
+    try {
+        var comp = findCompByName(args.compName);
+        if (!comp) { return JSON.stringify({ status: "error", message: "no composition found" }); }
+        var children = [];
+        if (args.layerNames && args.layerNames.length) {
+            for (var i = 0; i < args.layerNames.length; i++) {
+                var c = findLayerIn(comp, args.layerNames[i], null);
+                if (!c) { return JSON.stringify({ status: "error", message: "layer not found: " + args.layerNames[i] }); }
+                children.push(c);
+            }
+        } else {
+            var one = findLayerIn(comp, args.layerName, args.layerIndex);
+            if (!one) { return JSON.stringify({ status: "error", message: "layer not found (" + (args.layerName || ("index " + args.layerIndex)) + ")" }); }
+            children.push(one);
+        }
+        var parent = null;
+        if (args.clear !== true) {
+            parent = findLayerIn(comp, args.parentName, args.parentIndex);
+            if (!parent) { return JSON.stringify({ status: "error", message: "parent layer not found (" + (args.parentName || ("index " + args.parentIndex)) + ")" }); }
+        }
+        var changed = [];
+        for (var j = 0; j < children.length; j++) {
+            if (parent && children[j].index === parent.index) {
+                return JSON.stringify({ status: "error", message: "cannot parent '" + children[j].name + "' to itself" });
+            }
+            children[j].parent = parent;
+            changed.push(children[j].name);
+        }
+        return JSON.stringify({
+            status: "success",
+            parent: parent ? parent.name : null,
+            children: changed
+        });
+    } catch (e) {
+        return JSON.stringify({ status: "error", message: e.toString() });
+    }
+}
+
 // Find a comp by name, falling back to the active composition.
 function findCompByName(compName) {
     if (compName) {
@@ -1990,10 +2126,10 @@ function executeCommand(command, args) {
             case "createSolidLayer": result = createSolidLayer(args); break;
             case "setLayerProperties": result = setLayerProperties(args); break;
             case "setLayerKeyframe":
-                result = setLayerKeyframe(args.compIndex, args.layerIndex, args.propertyName, args.timeInSeconds, args.value, args.compName);
+                result = setLayerKeyframe(args.compIndex, args.layerIndex, args.propertyName, args.timeInSeconds, args.value, args.compName, args.layerName, args.easing, args.spatialInterpolation);
                 break;
             case "setLayerExpression":
-                result = setLayerExpression(args.compIndex, args.layerIndex, args.propertyName, args.expressionString, args.compName);
+                result = setLayerExpression(args.compIndex, args.layerIndex, args.propertyName, args.expressionString, args.compName, args.layerName);
                 break;
             case "applyEffect": result = applyEffect(args); break;
             case "applyEffectTemplate": result = applyEffectTemplate(args); break;
@@ -2005,6 +2141,8 @@ function executeCommand(command, args) {
             case "deleteLayer": result = deleteLayer(args); break;
             case "setLayerMask": result = setLayerMask(args); break;
             case "runBatch": result = runBatch(args); break;
+            case "createNullLayer": result = createNullLayer(args); break;
+            case "setLayerParent": result = setLayerParent(args); break;
             case "addImageLayer": result = addImageLayer(args); break;
             case "saveFramePng": result = saveFramePng(args); break;
             case "saveProject": result = saveProject(args); break;
