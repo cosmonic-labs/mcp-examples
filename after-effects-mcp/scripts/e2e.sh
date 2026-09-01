@@ -166,7 +166,7 @@ echo "== effect_template =="
 OUT=$(mcp_call effect_template '{"template":"gaussian-blur"}')
 assert_contains "gaussian-blur match name" 'ADBE Gaussian Blur 2' "$OUT"
 OUT=$(mcp_call effect_template '{"template":"text-pop"}')
-assert_contains "text-pop is two effects" 'ADBE Glow' "$OUT"
+assert_contains "text-pop is two effects" 'ADBE Glo2' "$OUT"
 assert_contains "text-pop includes drop shadow" 'ADBE Drop Shadow' "$OUT"
 # An unknown enum variant fails parameter deserialization, which rmcp reports
 # as a tool-level error (isError:true), not a JSON-RPC -32602.
@@ -268,6 +268,25 @@ CMD=$(panel_serve '{"status":"success","requested":1,"completed":1,"failed":0}')
 wait $TOOL_PID
 assert_contains "batch entries name panel scripts" '"command":"createComposition"' "$CMD"
 assert_contains "batch passes the undo group" '"undoGroup":"scene"' "$CMD"
+mcp_call create_null_layer '{"compName":"Main","name":"RIG","position":[0,0],"anchorPoint":[0,0]}' >/dev/null &
+TOOL_PID=$!
+CMD=$(panel_serve '{"status":"success","layer":{"name":"RIG","index":1}}')
+wait $TOOL_PID
+assert_contains "create_null_layer maps to the panel command" '"command":"createNullLayer"' "$CMD"
+assert_contains "create_null_layer forwards the anchor point" '"anchorPoint":[0.0,0.0]' "$CMD"
+mcp_call set_layer_parent '{"compName":"Main","layerNames":["a","b"],"parentName":"RIG"}' >/dev/null &
+TOOL_PID=$!
+CMD=$(panel_serve '{"status":"success","parent":"RIG","children":["a","b"]}')
+wait $TOOL_PID
+assert_contains "set_layer_parent maps to the panel command" '"command":"setLayerParent"' "$CMD"
+assert_contains "set_layer_parent forwards the child list" '"layerNames":["a","b"]' "$CMD"
+mcp_call set_layer_keyframe '{"compName":"Main","layerName":"RIG","propertyName":"Position","timeInSeconds":1.5,"value":[10,20],"easing":"easeInOut","spatialInterpolation":"linear"}' >/dev/null &
+TOOL_PID=$!
+CMD=$(panel_serve '{"success":true,"message":"Keyframe set"}')
+wait $TOOL_PID
+assert_contains "keyframes address layers by name" '"layerName":"RIG"' "$CMD"
+assert_contains "keyframe easing keeps its camelCase name" '"easing":"easeInOut"' "$CMD"
+assert_contains "spatial interpolation is forwarded" '"spatialInterpolation":"linear"' "$CMD"
 mcp_call run_script '{"script":"createCamera","parameters":{"zoom":1000}}' >/dev/null &
 TOOL_PID=$!
 CMD=$(panel_serve '{"status":"success"}')

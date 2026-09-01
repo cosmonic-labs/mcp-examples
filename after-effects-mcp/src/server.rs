@@ -330,7 +330,7 @@ impl AfterEffectsServer {
                 {"match_name": "ADBE CurvesCustom", "settings": {}}
             ]),
             EffectTemplate::Glow => serde_json::json!([
-                {"match_name": "ADBE Glow", "settings": {"Glow Threshold": 50, "Glow Radius": 15, "Glow Intensity": 1}}
+                {"match_name": "ADBE Glo2", "settings": {"Glow Threshold": 50, "Glow Radius": 15, "Glow Intensity": 1}}
             ]),
             EffectTemplate::DropShadow => serde_json::json!([
                 {"match_name": "ADBE Drop Shadow", "settings": {"Shadow Color": [0,0,0,1], "Opacity": 50, "Direction": 135, "Distance": 10, "Softness": 10}}
@@ -341,7 +341,7 @@ impl AfterEffectsServer {
             ]),
             EffectTemplate::TextPop => serde_json::json!([
                 {"match_name": "ADBE Drop Shadow", "settings": {"Shadow Color": [0,0,0,1], "Opacity": 75, "Distance": 5, "Softness": 10}},
-                {"match_name": "ADBE Glow", "settings": {"Glow Threshold": 50, "Glow Radius": 10, "Glow Intensity": 1.5}}
+                {"match_name": "ADBE Glo2", "settings": {"Glow Threshold": 50, "Glow Radius": 10, "Glow Intensity": 1.5}}
             ]),
         };
         Ok(CallToolResult::structured(

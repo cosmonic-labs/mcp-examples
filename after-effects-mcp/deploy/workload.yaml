@@ -9,7 +9,7 @@ metadata:
   namespace: default
   labels:
     app.kubernetes.io/name: "after-effects-mcp"
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.1.7"
     "mcp.ai/auth-type": none
     mcp.ai/domain: "adobe-after-effects"
     "mcp.ai/function-type": tools
@@ -39,7 +39,7 @@ spec:
       # Desktop pins this tag to a digest at apply time. To deploy a locally
       # promoted build instead, use the digest-pinned
       # oci-registry.localhost:8200 reference that promote returns.
-      image: "ghcr.io/cosmonic-labs/mcp-examples/after-effects-mcp:0.1.0"
+      image: "ghcr.io/cosmonic-labs/mcp-examples/after-effects-mcp:0.1.7"
       # Several warm instances so a tool call waiting on a result never
       # starves the After Effects panel's poll requests.
       poolSize: 4

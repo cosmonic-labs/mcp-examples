@@ -1,6 +1,6 @@
 [package]
 name = "after-effects-mcp"
-version = "0.1.0"
+version = "0.1.7"
 edition = "2021"
 rust-version = "1.90"
 description = "After Effects helper MCP server (WebAssembly component, wasi:http@0.3.0)"

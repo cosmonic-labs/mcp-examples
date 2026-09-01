@@ -87,6 +87,8 @@ pub enum PanelScript {
     DeleteLayer,
     SetLayerMask,
     RunBatch,
+    CreateNullLayer,
+    SetLayerParent,
     AddImageLayer,
     SaveFramePng,
     SaveProject,
@@ -119,6 +121,8 @@ impl PanelScript {
             Self::DeleteLayer => "deleteLayer",
             Self::SetLayerMask => "setLayerMask",
             Self::RunBatch => "runBatch",
+            Self::CreateNullLayer => "createNullLayer",
+            Self::SetLayerParent => "setLayerParent",
             Self::AddImageLayer => "addImageLayer",
             Self::SaveFramePng => "saveFramePng",
             Self::SaveProject => "saveProject",
@@ -238,7 +242,7 @@ pub struct CreateTextLayerParams {
     pub comp_name: Option<String>,
     /// The text content.
     pub text: String,
-    /// `[x, y]` position (default `[960, 540]`).
+    /// `[x, y]` position (defaults to the composition centre).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<Vec<f64>>,
     /// Font size (default 72).
@@ -253,6 +257,10 @@ pub struct CreateTextLayerParams {
     /// Paragraph alignment: `left`, `center`, or `right`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alignment: Option<TextAlignment>,
+    /// Layer name. Without it the layer is named after its text content,
+    /// which is ambiguous as soon as two layers share the same text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// Layer start time in seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_time: Option<f64>,
@@ -342,7 +350,7 @@ pub struct CreateSolidLayerParams {
     /// `[width, height]`. Defaults to the composition size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<Vec<f64>>,
-    /// `[x, y]` position (default `[960, 540]`).
+    /// `[x, y]` position (defaults to the composition centre).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<Vec<f64>>,
     /// Create as an adjustment layer (affects the layers beneath it).
@@ -435,6 +443,31 @@ pub struct SetLayerPropertiesParams {
     pub fill_color: Option<Vec<f64>>,
 }
 
+/// Temporal easing applied to a keyframe, mirroring the keyframe assistant:
+/// `easeIn` shapes how the value arrives into the key, `easeOut` how it
+/// leaves, `easeInOut` both (classic Easy Ease). `hold` freezes the value
+/// until the next key.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum KeyframeEasing {
+    Linear,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+    Hold,
+}
+
+/// Spatial interpolation at a keyframe of a spatial property (Position).
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SpatialInterpolation {
+    /// Straight motion path through the key. After Effects' default
+    /// auto-Bezier rounds corners, dragging right-angle paths off course.
+    Linear,
+    /// Leave After Effects' default auto-Bezier tangents alone.
+    Auto,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetLayerKeyframeParams {
@@ -445,8 +478,13 @@ pub struct SetLayerKeyframeParams {
     /// 1-based index of the composition in the project panel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comp_index: Option<i64>,
+    /// Layer name. Preferred over `layerIndex`: layer indices shift as layers
+    /// are added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_name: Option<String>,
     /// 1-based layer index within the composition.
-    pub layer_index: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_index: Option<i64>,
     /// Property to keyframe, e.g. `Position`, `Scale`, `Rotation`, `Opacity`.
     pub property_name: String,
     /// Keyframe time in seconds.
@@ -454,6 +492,13 @@ pub struct SetLayerKeyframeParams {
     /// Keyframe value: `[x, y]` for Position, `[w, h]` for Scale, a number for
     /// Rotation and Opacity.
     pub value: Value,
+    /// Temporal easing for this key (default: After Effects' linear).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub easing: Option<KeyframeEasing>,
+    /// For Position keys: `linear` forces a straight motion path through this
+    /// key instead of the default auto-Bezier curve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spatial_interpolation: Option<SpatialInterpolation>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -465,8 +510,12 @@ pub struct SetLayerExpressionParams {
     /// 1-based index of the composition in the project panel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comp_index: Option<i64>,
+    /// Layer name. Preferred over `layerIndex`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_name: Option<String>,
     /// 1-based layer index within the composition.
-    pub layer_index: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_index: Option<i64>,
     /// Property to target, e.g. `Position`, `Opacity`.
     pub property_name: String,
     /// The expression. An empty string removes it. The `expression` tool
@@ -483,8 +532,13 @@ pub struct ApplyEffectParams {
     /// 1-based index of the composition in the project panel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comp_index: Option<i64>,
+    /// Layer name. Preferred over `layerIndex`: layer indices shift as layers
+    /// are added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_name: Option<String>,
     /// 1-based layer index within the composition.
-    pub layer_index: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_index: Option<i64>,
     /// Display name, e.g. `Gaussian Blur`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effect_name: Option<String>,
@@ -677,6 +731,54 @@ pub struct BatchSetLayerPropertiesParams {
     pub operations: Vec<LayerPropertyOperation>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateNullLayerParams {
+    /// Composition name. Defaults to the active composition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comp_name: Option<String>,
+    /// Layer name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// `[x, y]` position. For a rig meant to scale a scene around the comp
+    /// origin, use `[0, 0]` together with `anchorPoint: [0, 0]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<Vec<f64>>,
+    /// `[x, y]` anchor point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_point: Option<Vec<f64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<f64>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SetLayerParentParams {
+    /// Composition name. Defaults to the active composition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comp_name: Option<String>,
+    /// Parent many layers at once (preferred for rigging a whole scene).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_names: Option<Vec<String>>,
+    /// Single child layer by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_name: Option<String>,
+    /// Single child layer by 1-based index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_index: Option<i64>,
+    /// Parent layer by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_name: Option<String>,
+    /// Parent layer by 1-based index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_index: Option<i64>,
+    /// Remove the parent instead of setting one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear: Option<bool>,
+}
+
 /// One entry in a [`run_batch`](AfterEffectsServer::run_batch) command list.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -770,7 +872,11 @@ impl AfterEffectsServer {
                 STALE_PANEL_HINT
             } else {
                 "Panel not connected. In After Effects: Window > mcp-bridge-auto.jsx \
-                 (run ./install-bridge.sh first if it is not listed)."
+                 (run ./install-bridge.sh first if it is not listed). Scriptable \
+                 launch (no menu click): save GET /bridge/panel.jsx to a file, then \
+                 `osascript -e 'tell application \"Adobe After Effects 2026\" to \
+                 DoScriptFile \"<file>\"'` — the panel opens as a floating palette \
+                 and starts polling immediately."
             },
         })))
     }
@@ -903,6 +1009,33 @@ impl AfterEffectsServer {
     }
 
     #[tool(
+        description = "Create a null object layer — the standard invisible parent for rigging. \
+                       Parent a scene's layers to a null at position [0,0] / anchor [0,0] and \
+                       keyframe the null's Position and Scale to get 2D camera pans and zooms."
+    )]
+    #[tracing::instrument(name = "tool.create_null_layer", skip(self))]
+    async fn create_null_layer(
+        &self,
+        Parameters(params): Parameters<CreateNullLayerParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        dispatch("createNullLayer", &params).await
+    }
+
+    #[tool(
+        description = "Parent one or more layers to another layer, or clear the parent. \
+                       Like the pick-whip, the child's transform is rewritten to preserve its \
+                       world position at the current time — so author layers at absolute \
+                       positions and parent them BEFORE animating either layer."
+    )]
+    #[tracing::instrument(name = "tool.set_layer_parent", skip(self))]
+    async fn set_layer_parent(
+        &self,
+        Parameters(params): Parameters<SetLayerParentParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        dispatch("setLayerParent", &params).await
+    }
+
+    #[tool(
         description = "Add a camera layer. Two-node cameras aim at a point of interest; one-node \
                        cameras orient freely. Only 3D layers are affected by a camera."
     )]
@@ -943,7 +1076,12 @@ impl AfterEffectsServer {
         dispatch("batchSetLayerProperties", &params).await
     }
 
-    #[tool(description = "Set a keyframe on a layer property at a given time.")]
+    #[tool(
+        description = "Set a keyframe on a layer property at a given time. `easing` applies \
+                       keyframe-assistant-style temporal easing (easeInOut = classic Easy Ease); \
+                       `spatialInterpolation: linear` keeps Position paths on straight lines \
+                       instead of auto-Bezier curves. Prefer `layerName` over `layerIndex`."
+    )]
     #[tracing::instrument(name = "tool.set_layer_keyframe", skip(self))]
     async fn set_layer_keyframe(
         &self,
@@ -1222,6 +1360,12 @@ const HELP_TEXT: &str = r#"# After Effects MCP bridge
    "Allow Scripts to Write Files and Access Network", then restart.
 3. Open the panel: Window > mcp-bridge-auto.jsx. Leave it open; it polls this
    server every ~2 seconds.
+4. Agents can open the panel without the menu: save `GET /bridge/panel.jsx`
+   (always matches this server) to a file and run
+   `osascript -e 'tell application "Adobe After Effects 2026" to DoScriptFile "<file>"'`
+   — it opens as a floating palette and starts polling immediately. To swap in
+   a newer panel, first close the old palette with
+   `osascript -e '... to DoScript "(function(){var w=Window.find(\"palette\",\"MCP Bridge Auto\");if(w){w.close()}})()"'`.
 
 ## How it works
 A tool call queues one command; the panel claims it on its next poll, runs it
@@ -1243,7 +1387,7 @@ difference between minutes and seconds.
 - Curves: "ADBE CurvesCustom"
 - Hue/Saturation: "ADBE HUE SATURATION"
 - Levels: "ADBE Pro Levels2"
-- Glow: "ADBE Glow"
+- Glow: "ADBE Glo2"
 - Drop Shadow: "ADBE Drop Shadow"
 - Fractal Noise: "ADBE Fractal Noise"
 
