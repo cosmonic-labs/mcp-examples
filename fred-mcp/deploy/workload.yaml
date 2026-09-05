@@ -26,6 +26,13 @@ metadata:
     mcp.ai/transport: "streamable-http"
   annotations:
     desktop.cosmonic.com/source: mcp
+    # Credential metadata for Cosmonic Desktop (issue #480, Layer 2). A
+    # workload whose `secretFrom` ref is not registered is accepted and
+    # parked rather than crash-looped; this annotation is what the
+    # missing-credential prompt shows — which key, which env var it lands
+    # in, what it is, and where to get one. Names and metadata only: a
+    # credential VALUE never appears in a manifest.
+    desktop.cosmonic.com/credentials: '[{"ref":"fred-api-key","env":"FRED_API_KEY","kind":"api-key","description":"FRED API key, sent as the api_key query parameter on every request to the St. Louis Fed API; free, no scopes, one key per account","obtainUrl":"https://fred.stlouisfed.org/docs/api/api_key.html"}]'
 spec:
   hostInterfaces:
     - namespace: wasi
