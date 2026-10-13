@@ -39,6 +39,20 @@ fn key_path(key: &str) -> PathBuf {
     store_dir().join(format!("{name}.bin"))
 }
 
+/// A temp file next to `path`, unique per call. Every request runs in a fresh
+/// instance, so a counter in memory would restart at zero; `RandomState` is
+/// seeded from the host's randomness instead. The leading `.` and `.tmp`
+/// suffix keep it from colliding with a key file, which is always
+/// `<alphanumerics and _>.bin`.
+fn temp_path(path: &std::path::Path) -> PathBuf {
+    use std::hash::{BuildHasher, Hasher};
+    let nonce = std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish();
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("key");
+    path.with_file_name(format!(".{name}.{nonce:016x}.tmp"))
+}
+
 struct Component;
 
 struct Bucket;
@@ -66,8 +80,17 @@ impl GuestBucket for Bucket {
     }
 
     fn set(&self, key: String, value: Vec<u8>) -> Result<(), Error> {
-        std::fs::write(key_path(&key), value)
-            .map_err(|err| Error::Other(format!("write {key}: {err}")))
+        // Write to a temp file and rename it over the key. `std::fs::write`
+        // truncates in place, so a concurrent `get` from another instance
+        // could read an empty or partial file between the truncate and the
+        // write. A rename replaces the file in one step.
+        let path = key_path(&key);
+        let tmp = temp_path(&path);
+        std::fs::write(&tmp, value).map_err(|err| Error::Other(format!("write {key}: {err}")))?;
+        std::fs::rename(&tmp, &path).map_err(|err| {
+            let _ = std::fs::remove_file(&tmp);
+            Error::Other(format!("rename {key}: {err}"))
+        })
     }
 
     fn delete(&self, key: String) -> Result<(), Error> {

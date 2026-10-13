@@ -47,7 +47,9 @@ WASM="$PLUGGED"
 # Spelled out rather than `mktemp -d -t ae-mcp-kv`: BSD mktemp reads -t as a
 # prefix, GNU mktemp reads it as a template and rejects one with no X's.
 KV_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ae-mcp-kv.XXXXXX") || exit 1
-trap 'rm -rf "$KV_DIR" "${KV_DIR}-guard"' EXIT
+# Chain onto the harness library's EXIT trap rather than replacing it, so
+# mcp_harness_cleanup still stops the `wasmtime serve` processes.
+trap 'mcp_harness_cleanup; rm -rf "$KV_DIR" "${KV_DIR}-guard"' EXIT
 
 mkdir -p "${KV_DIR}-guard"
 mcp_harness_start --dir "${KV_DIR}::/kv"

@@ -233,7 +233,7 @@ To iterate against Desktop's own registry, use `workload.yaml` instead:
 
 ```console
 $ wash oci push --insecure \
-    oci-registry.localhost:8200/cfpb-complaints-mcp:0.1.0 \
+    oci-registry.localhost:8200/cfpb-complaints-mcp:0.1.1 \
     target/wasm32-wasip2/release/cfpb_complaints_mcp.wasm
 ```
 
