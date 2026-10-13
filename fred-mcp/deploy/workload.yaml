@@ -17,7 +17,7 @@ metadata:
   namespace: default
   labels:
     app.kubernetes.io/name: "fred-mcp"
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.1.1"
     "mcp.ai/auth-type": none
     mcp.ai/domain: "federal-reserve-economic-data"
     "mcp.ai/function-type": tools
@@ -41,7 +41,7 @@ spec:
       # Desktop pins this tag to a digest at apply time. To deploy a locally
       # promoted build instead, use the digest-pinned
       # oci-registry.localhost:8200 reference that promote returns.
-      image: "ghcr.io/cosmonic-labs/mcp-examples/fred-mcp:0.1.0"
+      image: "ghcr.io/cosmonic-labs/mcp-examples/fred-mcp:0.1.1"
       poolSize: 1
       maxInvocations: 0
       localResources:

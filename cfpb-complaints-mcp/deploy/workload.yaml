@@ -10,7 +10,7 @@ metadata:
   namespace: default
   labels:
     app.kubernetes.io/name: "cfpb-complaints-mcp"
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.1.1"
     "mcp.ai/auth-type": none
     mcp.ai/domain: "cfpb-consumer-complaints"
     "mcp.ai/function-type": tools
@@ -32,7 +32,7 @@ spec:
   components:
     - name: "cfpb-complaints-mcp"
       # Desktop pins this tag to a digest at apply time.
-      image: "ghcr.io/cosmonic-labs/mcp-examples/cfpb-complaints-mcp:0.1.0"
+      image: "ghcr.io/cosmonic-labs/mcp-examples/cfpb-complaints-mcp:0.1.1"
       poolSize: 1
       maxInvocations: 0
       localResources:

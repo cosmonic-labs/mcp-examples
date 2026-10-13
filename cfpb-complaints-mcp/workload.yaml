@@ -16,7 +16,7 @@ metadata:
   # MCP metadata convention used by Cosmonic Desktop to catalog MCP servers.
   labels:
     app.kubernetes.io/name: "cfpb-complaints-mcp"
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.1.1"
     "mcp.ai/auth-type": none
     mcp.ai/domain: "cfpb-consumer-complaints"
     "mcp.ai/function-type": tools
@@ -36,7 +36,7 @@ spec:
         host: cfpb-complaints-mcp.localhost
   components:
     - name: mcp
-      image: oci-registry.localhost:8200/cfpb-complaints-mcp:0.1.0
+      image: oci-registry.localhost:8200/cfpb-complaints-mcp:0.1.1
       poolSize: 1
       maxInvocations: 0
       localResources:

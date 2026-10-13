@@ -16,7 +16,7 @@ metadata:
   # Update name/version/domain when you fork this template.
   labels:
     app.kubernetes.io/name: "after-effects-mcp"
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.1.1"
     "mcp.ai/auth-type": none
     mcp.ai/domain: "adobe-after-effects"
     "mcp.ai/function-type": tools
@@ -44,7 +44,7 @@ spec:
       interfaces: ["store"]
   components:
     - name: mcp
-      image: oci-registry.localhost:8200/after-effects-mcp:0.1.0
+      image: oci-registry.localhost:8200/after-effects-mcp:0.1.1
       # Several warm instances so a tool call waiting on a result never
       # starves the panel's poll requests.
       poolSize: 4

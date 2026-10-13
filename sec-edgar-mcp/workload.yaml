@@ -16,7 +16,7 @@ metadata:
   # Update name/version/domain when you fork this template.
   labels:
     app.kubernetes.io/name: "sec-edgar-mcp"
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.1.1"
     "mcp.ai/auth-type": none
     mcp.ai/domain: "sec-edgar"
     "mcp.ai/function-type": tools
@@ -34,7 +34,7 @@ spec:
         host: sec-edgar-mcp.localhost
   components:
     - name: mcp
-      image: oci-registry.localhost:8200/sec-edgar-mcp:0.1.0
+      image: oci-registry.localhost:8200/sec-edgar-mcp:0.1.1
       poolSize: 1
       maxInvocations: 0
       localResources:
