@@ -165,7 +165,7 @@ $ curl -X POST http://cfpb-complaints-mcp.localhost.cosmonic.sh:8200/ \
     -H 'MCP-Protocol-Version: 2026-07-28' \
     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"you","version":"0"}}}'
 
-data: {…"serverInfo":{"name":"cfpb-complaints-mcp","version":"0.1.0"}…}
+data: {…"serverInfo":{"name":"cfpb-complaints-mcp","version":"0.1.1"}…}
 ```
 
 ## Connect it to Claude
@@ -233,7 +233,7 @@ To iterate against Desktop's own registry, use `workload.yaml` instead:
 
 ```console
 $ wash oci push --insecure \
-    oci-registry.localhost:8200/cfpb-complaints-mcp:0.1.0 \
+    oci-registry.localhost:8200/cfpb-complaints-mcp:0.1.1 \
     target/wasm32-wasip2/release/cfpb_complaints_mcp.wasm
 ```
 
